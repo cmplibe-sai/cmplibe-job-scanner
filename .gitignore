@@ -1,0 +1,20 @@
+# Python Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local database & config files (keep persistent in Render Disks or cloud volume)
+data/*.db
+data/*.sqlite
+data/*.json
+!data/.gitkeep
+
+# Environment files
+.env
+.env.local
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db

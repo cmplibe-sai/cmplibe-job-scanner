@@ -1,0 +1,23 @@
+# ====================================================================
+# cMPLiBe AIScanner - Production Dependencies
+# ====================================================================
+
+# Web Framework & ASGI Server
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+pydantic>=2.6.0,<3.0.0
+
+# HTTP & Web Scraping (with TLS fingerprinting bypass)
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+curl_cffi>=0.7.0
+
+# Google Sheets Live Integration
+gspread>=6.0.0
+google-auth>=2.28.0
+
+# CLI & Formatting
+rich>=13.7.0
+
+# Testing
+pytest>=8.0.0

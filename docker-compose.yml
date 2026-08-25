@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  aiscanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cmplibe_aiscanner
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - ADMIN_PASSWORD=cmplibe@2026
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/auth/me"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

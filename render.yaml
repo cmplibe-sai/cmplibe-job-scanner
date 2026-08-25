@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cmplibe-aiscanner
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn job_pulse.server:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: aiscanner-data
+      mountPath: /app/data
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.3
+      - key: DATA_DIR
+        value: /app/data
+      - key: ADMIN_PASSWORD
+        generateValue: true

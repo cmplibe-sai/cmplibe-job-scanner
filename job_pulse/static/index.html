@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="theme-color" content="#090d16">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>cMPLiBe's AIScanner - Multi-Portal Job & Target Company Radar</title>
+  <meta name="description" content="cMPLiBe's AIScanner: AI-ready multi-portal job aggregator, target company radar, and automated email alerts for freshers, internships, and experienced roles.">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+  <div class="bg-glow glow-3"></div>
+
+  <!-- Security Login Overlay Gate -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-modal glass-card">
+      <div class="auth-header">
+        <div class="auth-icon-wrap">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h2>Team Portal Security Gate</h2>
+        <p>cMPLiBe AIScanner • Authorized Access Only</p>
+      </div>
+
+      <form id="auth-login-form" onsubmit="handleLogin(event)">
+        <div id="auth-error-msg" class="auth-error-banner hidden"></div>
+        <div class="form-group">
+          <label for="auth-username"><i class="fa-solid fa-user"></i> Team Username</label>
+          <input type="text" id="auth-username" placeholder="e.g. admin" required autofocus autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="auth-password"><i class="fa-solid fa-lock"></i> Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" id="btn-auth-submit" class="btn-primary" style="width: 100%; margin-top: 10px; padding: 12px; font-weight: 600;">
+          <i class="fa-solid fa-right-to-bracket"></i> Sign In to Team Portal
+        </button>
+      </form>
+      <div class="auth-footer">
+        <small>Protected by cMPLiBe Cryptographic Session Authentication</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container" id="main-app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 16px;">
+        <div class="brand">
+          <img src="logo.png" alt="cMPLiBe Logo" class="brand-logo-img" onerror="this.style.display='none'">
+          <div class="brand-text">
+            <h1>cMPLiBe's <span class="badge-pro">AIScanner</span></h1>
+            <p class="brand-tagline">Heartland • Growth-Mindset • Opportunities</p>
+          </div>
+        </div>
+
+        <div class="user-auth-bar" style="display: flex; align-items: center; gap: 10px;">
+          <span class="user-pill" id="nav-user-pill" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); padding: 6px 14px; border-radius: 9999px; font-size: 12px; color: #f8fafc;">
+            <i class="fa-solid fa-user-shield text-green"></i> <strong id="nav-username">admin</strong>
+          </span>
+          <button type="button" class="btn-icon" id="btn-nav-logout" onclick="handleLogout()" title="Sign Out of Team Portal" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Primary Main Navigation -->
+      <nav class="main-nav-tabs">
+        <button class="nav-tab active" id="nav-tab-explorer" onclick="switchMainTab('explorer')">
+          <i class="fa-solid fa-compass"></i> Opportunity Explorer
+        </button>
+        <button class="nav-tab" id="nav-tab-radar" onclick="switchMainTab('radar')">
+          <i class="fa-solid fa-crosshairs"></i> Target Company Radar <span class="nav-pill" id="nav-target-count">0</span>
+        </button>
+        <button class="nav-tab" id="nav-tab-discovery" onclick="switchMainTab('discovery')">
+          <i class="fa-solid fa-earth-asia"></i> All-India Job Radar 🇮🇳
+        </button>
+        <button class="nav-tab" id="nav-tab-sheets" onclick="switchMainTab('sheets')">
+          <i class="fa-solid fa-table-cells"></i> Google Sheet Live Sync 📊
+        </button>
+        <button class="nav-tab" id="nav-tab-settings" onclick="switchMainTab('settings')">
+          <i class="fa-solid fa-envelope-circle-check"></i> Email & System Settings
+        </button>
+      </nav>
+
+      <!-- Dynamic Live Search Metrics Overview -->
+      <div class="header-metrics">
+        <div class="metric-card">
+          <i class="fa-solid fa-briefcase"></i>
+          <div>
+            <span class="metric-value" id="stat-total-jobs">0</span>
+            <span class="metric-label">Positions Stored</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-laptop-code text-cyan"></i>
+          <div>
+            <span class="metric-value" id="stat-tech-jobs">0</span>
+            <span class="metric-label">Technical Roles</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-user-tie text-purple"></i>
+          <div>
+            <span class="metric-value" id="stat-nontech-jobs">0</span>
+            <span class="metric-label">Non-Technical Roles</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-bullhorn text-pink"></i>
+          <div>
+            <span class="metric-value" id="stat-hiring-posts">0</span>
+            <span class="metric-label">HR / Recruiter Posts</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 1: OPPORTUNITY EXPLORER                                      -->
+    <!-- ================================================================= -->
+    <main id="view-explorer" class="main-grid">
+      <!-- Left Sidebar: Unified Filters & Scraper Controls -->
+      <aside class="sidebar-panel">
+        <div class="glass-card scraper-control-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-sliders text-primary"></i> Search & Filters</h3>
+            <span class="badge live-badge"><span class="dot"></span> Ready</span>
+          </div>
+
+          <!-- Search Mode Selector -->
+          <div class="search-mode-tabs">
+            <button type="button" class="mode-tab active" id="tab-mode-role" onclick="setSearchMode('role')">
+              <i class="fa-solid fa-user-tie"></i> By Role / Title
+            </button>
+            <button type="button" class="mode-tab" id="tab-mode-company" onclick="setSearchMode('company')">
+              <i class="fa-solid fa-building"></i> By Company
+            </button>
+          </div>
+
+          <form id="scrape-form">
+            <!-- Search Keywords / Company Input -->
+            <div class="form-group" id="group-search-input">
+              <label for="keywords" id="label-keywords"><i class="fa-solid fa-magnifying-glass"></i> Job Title / Keywords</label>
+              <input type="text" id="keywords" name="keywords" placeholder="e.g. Category Manager, HR Recruiter, Python, React" value="">
+            </div>
+
+            <!-- Role Category Presets -->
+            <div class="form-group" id="group-category-presets">
+              <label><i class="fa-solid fa-tags"></i> Quick Role Presets</label>
+              <div class="preset-chips">
+                <button type="button" class="chip" onclick="applyPreset('Category Manager')">📦 Category Mgr</button>
+                <button type="button" class="chip" onclick="applyPreset('HR Recruiter')">👥 HR / Talent</button>
+                <button type="button" class="chip" onclick="applyPreset('Finance Manager')">💰 Finance</button>
+                <button type="button" class="chip" onclick="applyPreset('Business Development')">📈 Sales / BD</button>
+                <button type="button" class="chip" onclick="applyPreset('Software Engineer')">💻 Tech / Dev</button>
+                <button type="button" class="chip" onclick="applyPreset('Marketing Specialist')">📢 Marketing</button>
+              </div>
+            </div>
+
+            <!-- Technical vs Non-Technical Filter -->
+            <div class="form-group">
+              <label for="role-type-select"><i class="fa-solid fa-cubes"></i> Role Category</label>
+              <select id="role-type-select">
+                <option value="all" selected>All Role Types (Tech & Non-Tech)</option>
+                <option value="non_technical">👔 Non-Technical (Business, HR, Finance, Ops, Sales)</option>
+                <option value="technical">💻 Technical (Engineering, AI, Dev, Data)</option>
+              </select>
+            </div>
+
+            <!-- Target Location Selector -->
+            <div class="form-group">
+              <label for="location-select"><i class="fa-solid fa-location-dot"></i> Location</label>
+              <select id="location-select" onchange="handleLocationChange(this.value)">
+                <option value="India" selected>🇮🇳 All India / Any Location</option>
+                <option value="Bangalore">📍 Bangalore / Bengaluru</option>
+                <option value="Mumbai">📍 Mumbai / MMR</option>
+                <option value="Delhi">📍 Delhi / NCR (Gurgaon / Noida)</option>
+                <option value="Hyderabad">📍 Hyderabad</option>
+                <option value="Pune">📍 Pune</option>
+                <option value="Chennai">📍 Chennai</option>
+                <option value="Kolkata">📍 Kolkata</option>
+                <option value="Ahmedabad">📍 Ahmedabad</option>
+                <option value="custom">✏️ Other / Custom Location...</option>
+              </select>
+              <input type="text" id="location-custom" class="hidden" placeholder="Enter specific city or state" style="margin-top: 8px;">
+            </div>
+
+            <!-- Experience & Work Mode -->
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label for="experience-select"><i class="fa-solid fa-graduation-cap"></i> Experience</label>
+                <select id="experience-select">
+                  <option value="" selected>All Experience Levels</option>
+                  <option value="internship">🎓 Internship / Fresher</option>
+                  <option value="0-2">🚀 Entry Level (0-2 Yrs)</option>
+                  <option value="3-5">⚡ Mid Level (3-5 Yrs)</option>
+                  <option value="6-10">🏆 Senior Level (6-10 Yrs)</option>
+                  <option value="10+">👑 Executive (10+ Yrs)</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="work-mode-select"><i class="fa-solid fa-house-laptop"></i> Work Mode</label>
+                <select id="work-mode-select">
+                  <option value="" selected>All Modes</option>
+                  <option value="Remote">Remote</option>
+                  <option value="Hybrid">Hybrid</option>
+                  <option value="On-site">On-site</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Target Portals & Channels Checkboxes -->
+            <div class="form-group">
+              <label><i class="fa-solid fa-layer-group"></i> Target Portals & Channels</label>
+              <div class="portal-checkbox-grid">
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="linkedin" checked>
+                  <span class="portal-tag linkedin"><i class="fa-brands fa-linkedin"></i> LinkedIn</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="internshala" checked>
+                  <span class="portal-tag internshala"><i class="fa-solid fa-graduation-cap"></i> Internshala</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="unstop" checked>
+                  <span class="portal-tag unstop"><i class="fa-solid fa-trophy"></i> Unstop</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="shine" checked>
+                  <span class="portal-tag shine"><i class="fa-solid fa-sun"></i> Shine</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="linkedin_posts" checked>
+                  <span class="portal-tag linkedin-posts"><i class="fa-solid fa-bullhorn"></i> Recruiter Posts</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="naukri" checked>
+                  <span class="portal-tag naukri"><i class="fa-solid fa-n"></i> Naukri</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="foundit" checked>
+                  <span class="portal-tag foundit"><i class="fa-solid fa-m"></i> Foundit</span>
+                </label>
+                <label class="portal-check">
+                  <input type="checkbox" name="portal" value="indeed" checked>
+                  <span class="portal-tag indeed"><i class="fa-solid fa-info"></i> Indeed</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="form-row" style="margin-top: 10px;">
+              <button type="submit" id="btn-start-scrape" class="btn-primary" style="flex: 2;">
+                <i class="fa-solid fa-play"></i> Fetch All Opportunities
+              </button>
+              <button type="button" id="btn-favorites-toggle" class="btn-toggle" style="flex: 1;" title="Filter Favorites">
+                <i class="fa-regular fa-star"></i> Saved
+              </button>
+            </div>
+          </form>
+
+          <!-- Live Progress Box -->
+          <div id="scrape-progress-container" class="scrape-progress-box hidden">
+            <div class="progress-header">
+              <span id="progress-status-text"><i class="fa-solid fa-spinner fa-spin"></i> Scraping in progress...</span>
+              <span id="progress-time-text">0s</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="progress-bar-fill" class="progress-bar-fill"></div>
+            </div>
+            <div id="portal-status-pills" class="portal-status-pills"></div>
+          </div>
+        </div>
+
+        <!-- Direct Company Careers Page Extractor -->
+        <div class="glass-card ats-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-globe text-accent"></i> Direct Careers Page Crawler</h3>
+          </div>
+          <p class="card-desc">Crawl all openings directly from any company career page (e.g. Jumbotail, Swiggy) or ATS.</p>
+          
+          <form id="ats-form">
+            <div class="form-group">
+              <input type="url" id="ats-url" placeholder="https://jumbotail.com/careers/" value="https://jumbotail.com/careers/" required>
+            </div>
+            <div class="form-group">
+              <input type="text" id="ats-company" placeholder="Company Name (e.g. Jumbotail, Stripe)">
+            </div>
+            <button type="submit" id="btn-ats-scrape" class="btn-secondary">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Extract All Openings
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Right Section: Job Explorer & Listings -->
+      <section class="content-panel">
+        <!-- Top Toolbar: View Switcher, Live Search Bar & Click-to-Export -->
+        <div class="top-action-bar">
+          <div class="view-tabs">
+            <button class="view-tab active" id="view-tab-jobs" onclick="switchView('jobs')">
+              <i class="fa-solid fa-briefcase"></i> Portal Job Listings <span class="tab-badge" id="tab-badge-jobs">0</span>
+            </button>
+            <button class="view-tab" id="view-tab-posts" onclick="switchView('posts')">
+              <i class="fa-solid fa-bullhorn"></i> Recruiter & HR Posts <span class="tab-badge" id="tab-badge-posts">0</span>
+            </button>
+          </div>
+
+          <div class="action-buttons-wrap">
+            <button id="btn-refresh" class="btn-icon" title="Refresh Listings"><i class="fa-solid fa-rotate-right"></i></button>
+
+            <!-- Click-to-Toggle Export Menu -->
+            <div class="export-dropdown" id="export-dropdown-wrap">
+              <button type="button" class="btn-outline export-trigger-btn" id="btn-export-trigger" onclick="toggleExportMenu(event)">
+                <i class="fa-solid fa-download"></i> Export Filtered <i class="fa-solid fa-chevron-down"></i>
+              </button>
+              <div class="export-menu" id="export-menu">
+                <a href="javascript:void(0)" onclick="downloadExport('csv')"><i class="fa-solid fa-file-csv text-green"></i> CSV Spreadsheet</a>
+                <a href="javascript:void(0)" onclick="downloadExport('json')"><i class="fa-solid fa-file-code text-cyan"></i> JSON Data</a>
+                <a href="javascript:void(0)" onclick="downloadExport('md')"><i class="fa-solid fa-file-lines text-purple"></i> Markdown Digest</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Filter Indicator Bar -->
+        <div id="active-filters-bar" class="active-filters-bar">
+          <div class="active-filters-list" id="active-filters-list">
+            <!-- Dynamic Active Filter Tags injected here -->
+          </div>
+          <button type="button" id="btn-clear-all-filters" class="btn-clear-filters" onclick="clearAllFilters()">
+            <i class="fa-solid fa-filter-circle-xmark"></i> Clear All Filters
+          </button>
+        </div>
+
+        <!-- Section Title -->
+        <div class="jobs-view-header">
+          <h2 id="jobs-count-title">Discovered Opportunities <span class="count-badge" id="jobs-count-badge">0</span></h2>
+        </div>
+
+        <!-- Standard Job Listings View -->
+        <div id="jobs-grid" class="jobs-grid">
+          <div class="empty-state">
+            <i class="fa-solid fa-satellite-dish fa-beat"></i>
+            <h3>No Jobs Aggregated Yet</h3>
+            <p>Select your desired filters on the left and click <strong>"Fetch All Opportunities"</strong> to discover fresh job listings!</p>
+          </div>
+        </div>
+
+        <!-- Recruiter Posts View (Hidden by default) -->
+        <div id="posts-grid" class="jobs-grid hidden">
+          <div class="empty-state">
+            <i class="fa-solid fa-bullhorn"></i>
+            <h3>No Hiring Posts Sourced Yet</h3>
+            <p>Select <strong>"Recruiter Posts"</strong> in the scraper panel to source job announcements posted by hiring managers and HRs!</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 2: TARGET COMPANY RADAR & NOTIFICATIONS                      -->
+    <!-- ================================================================= -->
+    <main id="view-radar" class="radar-container hidden">
+      <!-- Radar Overview Banner -->
+      <div class="radar-header-banner glass-card">
+        <div class="radar-banner-info">
+          <h2><i class="fa-solid fa-crosshairs text-primary"></i> Target Company Radar & Automatic Alerts</h2>
+          <p>Monitor specific target companies 24/7 across their <strong>Career ATS pages, LinkedIn, Internshala, Unstop, and Social Feeds</strong> for any newly published opportunities (Freshers 0-1 Y, Internships, Experienced & Leadership). New items are automatically delivered to your inbox.</p>
+        </div>
+        <div class="radar-banner-actions">
+          <button type="button" id="btn-run-radar-all" class="btn-primary" onclick="triggerFullRadarScan()">
+            <i class="fa-solid fa-radar fa-spin-pulse"></i> Run Company Radar Scan Now
+          </button>
+        </div>
+      </div>
+
+      <div class="radar-grid-layout">
+        <!-- Left: Add Company Watchlist Form -->
+        <aside class="glass-card radar-add-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-building-circle-check text-cyan"></i> Add Target Company</h3>
+          </div>
+          <form id="radar-add-form" onsubmit="handleAddRadarTarget(event)">
+            <div class="form-group">
+              <label for="radar-company-name"><i class="fa-solid fa-building"></i> Company Name <span class="required">*</span></label>
+              <input type="text" id="radar-company-name" placeholder="e.g. Swiggy, Jumbotail, Stripe, Zepto, Google, Khatabook" required>
+            </div>
+
+            <div class="form-group">
+              <label for="radar-career-url"><i class="fa-solid fa-link"></i> Direct Career Page / ATS URL (Optional)</label>
+              <input type="url" id="radar-career-url" placeholder="e.g. https://jumbotail.com/careers/ or Greenhouse/Lever link">
+              <small class="field-hint">Supports Greenhouse, Lever, Ashby, Workday, or any custom website career page.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="radar-keywords"><i class="fa-solid fa-filter"></i> Keyword Filter (Optional)</label>
+              <input type="text" id="radar-keywords" placeholder="Leave empty for ALL roles (Freshers, Internships & Exp)">
+            </div>
+
+            <div class="form-group">
+              <label><i class="fa-solid fa-satellite"></i> Channels to Monitor</label>
+              <div class="radar-channels-grid">
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="ats" checked> <span>🌐 Career / ATS Page</span></label>
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="linkedin" checked> <span>💼 LinkedIn Jobs</span></label>
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="internshala" checked> <span>🎓 Internshala</span></label>
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="unstop" checked> <span>🏆 Unstop</span></label>
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="shine" checked> <span>☀️ Shine</span></label>
+                <label class="radar-check"><input type="checkbox" name="radar-channel" value="social_posts" checked> <span>📢 Recruiter Posts</span></label>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-add-target" class="btn-primary" style="width: 100%; margin-top: 10px;">
+              <i class="fa-solid fa-plus"></i> Add to Watchlist
+            </button>
+          </form>
+        </aside>
+
+        <!-- Right: Active Watchlist & Activity Feed -->
+        <section class="radar-content-column">
+          <!-- Watched Companies List -->
+          <div class="glass-card radar-list-card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-list-check text-green"></i> Active Company Watchlist (<span id="radar-watchlist-count">0</span>)</h3>
+              <button type="button" class="btn-icon" onclick="loadRadarTargets()" title="Refresh Watchlist"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            
+            <div id="radar-targets-grid" class="radar-targets-grid">
+              <div class="empty-state">
+                <i class="fa-solid fa-building-circle-arrow-right"></i>
+                <h4>No Target Companies Added Yet</h4>
+                <p>Use the form on the left to add companies you want to monitor 24/7 for openings and recruiter posts!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sent Email Alerts Log -->
+          <div class="glass-card radar-logs-card" style="margin-top: 20px;">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-bell text-yellow"></i> Recent Radar Alerts Emailed</h3>
+              <button type="button" class="btn-icon" onclick="loadRadarLogs()" title="Refresh Logs"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+            
+            <div class="radar-logs-table-wrapper" id="radar-logs-wrapper">
+              <table class="radar-logs-table">
+                <thead>
+                  <tr>
+                    <th>Opportunity / Title</th>
+                    <th>Company</th>
+                    <th>Source Portal</th>
+                    <th>Experience</th>
+                    <th>Recipient</th>
+                    <th>Emailed At</th>
+                  </tr>
+                </thead>
+                <tbody id="radar-logs-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">No alerts emailed yet. Set up your SMTP settings to start receiving automatic email digests.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 3: ALL-INDIA MULTI-PORTAL JOB RADAR                          -->
+    <!-- ================================================================= -->
+    <main id="view-discovery" class="main-grid hidden">
+      <!-- Left: Discovery Trigger Controls -->
+      <aside class="sidebar-panel">
+        <div class="glass-card scraper-control-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-earth-asia text-primary"></i> All-India Radar</h3>
+            <span class="badge live-badge"><span class="dot"></span> 24/7 Engine</span>
+          </div>
+          <p class="card-desc" style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            Continuously monitors portals (Naukri, Indeed, Shine, LinkedIn, Foundit, Internshala, Unstop) for newly created jobs & internships across India.
+          </p>
+
+          <form id="discovery-scan-form" onsubmit="handleTriggerDiscoveryScan(event)">
+            <div class="form-group">
+              <label for="discovery-keywords"><i class="fa-solid fa-tags"></i> Keywords / Role Search</label>
+              <input type="text" id="discovery-keywords" placeholder="e.g. Developer, Manager, Recruiter, Fresher, Analyst" value="">
+              <small class="field-hint">Leave empty to use default broad role keywords.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="discovery-location"><i class="fa-solid fa-location-dot"></i> Target Hubs</label>
+              <select id="discovery-location">
+                <option value="India" selected>🇮🇳 All India (Pan-India Scan)</option>
+                <option value="Bangalore">📍 Bangalore</option>
+                <option value="Mumbai">📍 Mumbai</option>
+                <option value="Delhi">📍 Delhi / NCR</option>
+                <option value="Hyderabad">📍 Hyderabad</option>
+                <option value="Pune">📍 Pune</option>
+                <option value="Chennai">📍 Chennai</option>
+                <option value="Remote">🌐 Remote / Work from Home</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label for="discovery-role-type"><i class="fa-solid fa-cubes"></i> Category</label>
+                <select id="discovery-role-type">
+                  <option value="all" selected>All (Tech & Non-Tech)</option>
+                  <option value="technical">💻 Technical Only</option>
+                  <option value="non_technical">👔 Non-Tech Only</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="discovery-experience"><i class="fa-solid fa-graduation-cap"></i> Experience</label>
+                <select id="discovery-experience">
+                  <option value="" selected>All Levels</option>
+                  <option value="internship">🎓 Intern / Fresher</option>
+                  <option value="0-2">🚀 Entry (0-2 Yrs)</option>
+                  <option value="3-5">⚡ Mid (3-5 Yrs)</option>
+                  <option value="6-10">🏆 Senior (6-10 Yrs)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-top: 6px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+                <input type="checkbox" id="discovery-send-email" checked style="accent-color: var(--color-primary);">
+                <span>📧 Dispatch Email Digest to All-India Recipient</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 0;">
+                <input type="checkbox" id="discovery-sync-sheets" checked style="accent-color: #10b981;">
+                <span>📊 Live Sync to Google Sheets</span>
+              </label>
+            </div>
+
+            <button type="submit" id="btn-trigger-discovery" class="btn-primary" style="width: 100%; margin-top: 14px;">
+              <i class="fa-solid fa-bolt"></i> Trigger All-India Scan Now
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- Right: All-India Radar Overview & Logs -->
+      <section class="radar-content-column">
+        <!-- Status Overview Card -->
+        <div class="glass-card" style="margin-bottom: 20px;">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-satellite-dish text-cyan"></i> All-India Opportunity Radar Status</h3>
+            <span class="badge live-badge" id="discovery-status-badge"><span class="dot"></span> Ready</span>
+          </div>
+          <div class="header-metrics" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 12px;">
+            <div class="metric-card">
+              <i class="fa-solid fa-inbox text-orange"></i>
+              <div>
+                <span class="metric-value" id="discovery-recipient-display" style="font-size: 13px; word-break: break-all;">Not Configured</span>
+                <span class="metric-label">All-India Recipient Email</span>
+              </div>
+            </div>
+            <div class="metric-card">
+              <i class="fa-solid fa-clock-rotate-left text-green"></i>
+              <div>
+                <span class="metric-value" id="discovery-interval-display">Every 2 Hours</span>
+                <span class="metric-label">Scheduled Scan Interval</span>
+              </div>
+            </div>
+            <div class="metric-card">
+              <i class="fa-solid fa-bell-concierge text-yellow"></i>
+              <div>
+                <span class="metric-value" id="discovery-alerts-count">0</span>
+                <span class="metric-label">All-India Alerts Dispatched</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sent All-India Alert Logs -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-list-check text-orange"></i> Dispatched All-India Alert History</h3>
+            <button type="button" class="btn-icon" onclick="loadDiscoveryLogs()" title="Refresh Logs"><i class="fa-solid fa-rotate-right"></i></button>
+          </div>
+          <div class="radar-logs-table-wrapper">
+            <table class="radar-logs-table">
+              <thead>
+                <tr>
+                  <th>Opportunity / Role</th>
+                  <th>Company</th>
+                  <th>Portal</th>
+                  <th>Role Type</th>
+                  <th>Experience</th>
+                  <th>Recipient Email</th>
+                  <th>Emailed At</th>
+                </tr>
+              </thead>
+              <tbody id="discovery-logs-tbody">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No All-India alerts sent yet. Run a scan or enable background checks to start receiving alerts.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 4: GOOGLE SHEET LIVE SYNC                                    -->
+    <!-- ================================================================= -->
+    <main id="view-sheets" class="settings-container hidden">
+      <!-- Status & Quick Actions Banner -->
+      <div class="glass-card" style="margin-bottom: 20px; border-left: 4px solid #10b981;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <h2 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-table-cells text-green"></i> Google Sheets Live Synchronization Engine
+            </h2>
+            <p style="margin: 6px 0 0 0; font-size: 13px; color: var(--text-muted);">
+              Stream all newly discovered jobs, target company openings, and recruiter posts directly into Google Sheets in real-time.
+            </p>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button type="button" id="btn-open-google-sheet" class="btn-secondary" onclick="handleOpenGoogleSheet()" style="display: none;">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Google Sheet ↗
+            </button>
+            <button type="button" id="btn-disconnect-sheets" class="btn-secondary" onclick="handleDisconnectSheets()" style="display: none; border-color: rgba(239, 68, 68, 0.4); color: #f87171;" title="Disconnect Google Sheet live sync">
+              <i class="fa-solid fa-link-slash"></i> Disconnect Sync
+            </button>
+            <button type="button" class="btn-outline" id="btn-clean-sheets" onclick="handleCleanGoogleSheet()" title="Purge any leftover non-job links or department cards">
+              <i class="fa-solid fa-broom"></i> Clean Non-Job Rows
+            </button>
+            <button type="button" class="btn-primary" onclick="handleSyncAllToSheets()">
+              <i class="fa-solid fa-cloud-arrow-up"></i> Sync All Stored Jobs Now
+            </button>
+          </div>
+        </div>
+
+        <div class="header-metrics" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 16px;">
+          <div class="metric-card">
+            <i class="fa-solid fa-link text-green"></i>
+            <div>
+              <span class="metric-value" id="sheets-connection-badge" style="font-size: 14px;">⚪ Not Connected</span>
+              <span class="metric-label">Connection Status</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <i class="fa-solid fa-database text-cyan"></i>
+            <div>
+              <span class="metric-value" id="sheets-synced-count">0</span>
+              <span class="metric-label">Total Synced Rows</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <i class="fa-solid fa-clock text-purple"></i>
+            <div>
+              <span class="metric-value" id="sheets-last-sync-time" style="font-size: 13px;">Never</span>
+              <span class="metric-label">Last Synced Timestamp</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-grid" style="grid-template-columns: 1.2fr 1fr; gap: 20px; align-items: start;">
+        <!-- Left: Google Sheets Configuration Form -->
+        <div class="glass-card settings-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-sliders text-primary"></i> Google Sheets Credentials & Settings</h3>
+            <span class="badge live-badge"><i class="fa-solid fa-shield-halved"></i> Local Config</span>
+          </div>
+
+          <form id="sheets-form" onsubmit="handleSaveSheetsSettings(event)">
+            <div class="form-group" style="background: rgba(255,255,255,0.02); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+              <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 15px; font-weight: 600;">
+                <input type="checkbox" id="sheets-is-enabled" checked style="width: 18px; height: 18px; accent-color: #10b981;">
+                <span>Enable Google Sheets Live Synchronization</span>
+              </label>
+              <p style="margin: 4px 0 0 28px; font-size: 12px; color: var(--text-muted);">
+                When enabled, newly scraped opportunities are immediately appended to your Google Spreadsheet.
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label for="sheets-spreadsheet-id"><i class="fa-solid fa-file-excel"></i> Google Spreadsheet ID or Full URL <span class="required">*</span></label>
+              <input type="text" id="sheets-spreadsheet-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms or https://docs.google.com/spreadsheets/d/..." required>
+              <small class="field-hint">Paste the full spreadsheet URL or the ID from the browser address bar.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="sheets-credentials-json"><i class="fa-solid fa-key"></i> Google Cloud Service Account JSON / File Path <span class="required">*</span></label>
+              <textarea id="sheets-credentials-json" rows="6" placeholder='Paste your service_account.json content here (e.g. {"type": "service_account", "project_id": "...", "client_email": "...", ...}) OR enter path like "data/service_account.json"' style="width: 100%; background: #0f172a; border: 1px solid var(--border-color); color: #f8fafc; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 12px;"></textarea>
+              <small class="field-hint">Make sure to share your Google Sheet with the <strong>client_email</strong> found in this JSON key with <strong>Editor</strong> permissions.</small>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group" style="flex: 1;">
+                <label for="sheet-name-all-india"><i class="fa-solid fa-table"></i> All-India Sheet Tab</label>
+                <input type="text" id="sheet-name-all-india" value="All-India Jobs">
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="sheet-name-target-radar"><i class="fa-solid fa-table"></i> Target Radar Tab</label>
+                <input type="text" id="sheet-name-target-radar" value="Target Company Radar">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                <input type="checkbox" id="sheets-auto-sync" checked style="accent-color: var(--color-primary);">
+                <span>Automatically sync on search, discovery scans, and radar runs</span>
+              </label>
+            </div>
+
+            <div class="form-row" style="margin-top: 20px; gap: 14px;">
+              <button type="submit" id="btn-save-sheets" class="btn-primary" style="flex: 2;">
+                <i class="fa-solid fa-floppy-disk"></i> Save Configuration
+              </button>
+              <button type="button" id="btn-test-sheets" class="btn-secondary" style="flex: 1;" onclick="handleTestSheetsConnection()">
+                <i class="fa-solid fa-plug"></i> Test Connection
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Right: Setup Instructions & Live Helper -->
+        <div class="glass-card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-circle-question text-cyan"></i> Quick Setup Guide</h3>
+          </div>
+          <div style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+            <ol style="padding-left: 20px; margin: 0 0 16px 0;">
+              <li style="margin-bottom: 8px;">
+                <strong>Create / Open a Google Sheet</strong> in your Google Drive.
+              </li>
+              <li style="margin-bottom: 8px;">
+                <strong>Create a Service Account</strong> in <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--color-primary); text-decoration: underline;">Google Cloud Console</a> with the <strong>Google Sheets API</strong> & <strong>Google Drive API</strong> enabled.
+              </li>
+              <li style="margin-bottom: 8px;">
+                Download the <strong>Keys > JSON</strong> file and paste the JSON content into the form on the left.
+              </li>
+              <li style="margin-bottom: 8px;">
+                <strong>Share your Google Sheet</strong>: Click the <strong>Share</strong> button on your Google Sheet and add the service account email (e.g. <code>your-service-account@project.iam.gserviceaccount.com</code>) with <strong>Editor</strong> access.
+              </li>
+              <li>
+                Click <strong>Test Connection</strong> and you're ready! All columns, deduplication, and timestamps are handled automatically.
+              </li>
+            </ol>
+
+            <div class="info-banner" style="margin-top: 16px;">
+              <i class="fa-solid fa-shield-check text-green"></i>
+              <div>
+                <strong>Deduplication Guaranteed:</strong> The sync engine checks existing <code>Job ID</code>s before appending, ensuring zero duplicate rows even on repeated scans.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 5: DUAL EMAIL & SYSTEM SETTINGS                              -->
+    <!-- ================================================================= -->
+    <main id="view-settings" class="settings-container hidden">
+      <div class="glass-card settings-card">
+        <div class="card-header">
+          <h2><i class="fa-solid fa-envelope-circle-check text-primary"></i> Dual Radar Alerts & SMTP Configuration</h2>
+          <span class="badge live-badge"><i class="fa-solid fa-shield-halved"></i> Secure Local Storage</span>
+        </div>
+        <p class="card-desc">
+          Configure two separate email alert channels: one dedicated to your watched target companies, and one for broad All-India multi-portal job discoveries.
+        </p>
+
+        <form id="settings-form" onsubmit="handleSaveSettings(event)">
+          <!-- Dual Recipient Configuration Cards -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <!-- Card 1: Target Company Watchlist Recipient -->
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; border-top: 3px solid #0ea5e9;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; font-size: 15px; color: #38bdf8;"><i class="fa-solid fa-crosshairs"></i> Radar 1: Target Company Alerts</h4>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: #38bdf8; font-weight: 600;">
+                  <input type="checkbox" id="settings-is-enabled" checked style="width: 18px; height: 18px; accent-color: var(--color-primary);">
+                  <span>Active</span>
+                </label>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Enables automated 24/7 background email alerts whenever your watched target companies post new openings or recruiter posts.</p>
+              <div class="form-group">
+                <label for="recipient-email"><i class="fa-solid fa-inbox"></i> Target Recipient Email <span class="required">*</span></label>
+                <input type="email" id="recipient-email" placeholder="target.alerts@yourdomain.com" required>
+              </div>
+              <div class="form-group">
+                <label for="settings-interval"><i class="fa-solid fa-clock"></i> Target Scan Interval</label>
+                <select id="settings-interval">
+                  <option value="15">Every 15 Minutes</option>
+                  <option value="30">Every 30 Minutes</option>
+                  <option value="60" selected>Every 1 Hour (Recommended)</option>
+                  <option value="180">Every 3 Hours</option>
+                  <option value="360">Every 6 Hours</option>
+                  <option value="1440">Daily (24 Hours)</option>
+                </select>
+              </div>
+              <button type="button" class="btn-secondary" style="width: 100%; font-size: 12px; padding: 6px 12px;" onclick="handleSendTestEmail('target')">
+                <i class="fa-solid fa-paper-plane"></i> Test Target Radar Email
+              </button>
+            </div>
+
+            <!-- Card 2: All-India Discovery Recipient -->
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; border-top: 3px solid #f97316;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; font-size: 15px; color: #fb923c;"><i class="fa-solid fa-earth-asia"></i> Radar 2: All-India Job Alerts 🇮🇳</h4>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: #fb923c; font-weight: 600;">
+                  <input type="checkbox" id="settings-all-india-enabled" checked style="width: 18px; height: 18px; accent-color: #f97316;">
+                  <span>Active</span>
+                </label>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Enables automated 24/7 background email digests for newly published opportunities across all Indian portals.</p>
+              <div class="form-group">
+                <label for="all-india-recipient"><i class="fa-solid fa-inbox"></i> All-India Recipient Email <span class="required">*</span></label>
+                <input type="email" id="all-india-recipient" placeholder="allindia.jobs@yourdomain.com" required>
+              </div>
+              <div class="form-group">
+                <label for="all-india-interval"><i class="fa-solid fa-clock"></i> All-India Scan Interval</label>
+                <select id="all-india-interval">
+                  <option value="30">Every 30 Minutes</option>
+                  <option value="60">Every 1 Hour</option>
+                  <option value="120" selected>Every 2 Hours (Recommended)</option>
+                  <option value="240">Every 4 Hours</option>
+                  <option value="480">Every 8 Hours</option>
+                  <option value="1440">Daily (24 Hours)</option>
+                </select>
+              </div>
+              <button type="button" class="btn-secondary" style="width: 100%; font-size: 12px; padding: 6px 12px;" onclick="handleSendTestEmail('all_india')">
+                <i class="fa-solid fa-paper-plane"></i> Test All-India Alert Email
+              </button>
+            </div>
+          </div>
+
+          <!-- Outgoing SMTP Server Configuration -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin: 24px 0 10px 0; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+            <h3 style="font-size: 16px; color: #f8fafc; margin: 0;">
+              <i class="fa-solid fa-server text-cyan"></i> Outgoing SMTP Mail Server Settings
+            </h3>
+            <span class="badge" id="smtp-connection-badge" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-glass); font-size: 11.5px; padding: 3px 10px;">
+              ⚪ Status: Not Tested
+            </span>
+          </div>
+
+          <div class="form-group">
+            <label><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Provider Preset</label>
+            <div class="preset-chips">
+              <button type="button" class="chip" onclick="applySmtpPreset('gmail_ssl')"><i class="fa-brands fa-google"></i> Google Workspace / Gmail (smtp.gmail.com:465 SSL - Recommended)</button>
+              <button type="button" class="chip" onclick="applySmtpPreset('gmail')"><i class="fa-brands fa-google"></i> Gmail (smtp.gmail.com:587 TLS)</button>
+              <button type="button" class="chip" onclick="applySmtpPreset('hostinger')"><i class="fa-solid fa-envelope"></i> Hostinger Webmail (smtp.hostinger.com:465)</button>
+              <button type="button" class="chip" onclick="applySmtpPreset('outlook')"><i class="fa-brands fa-microsoft"></i> Outlook / Hotmail (smtp-mail.outlook.com:587)</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+              <label for="smtp-host"><i class="fa-solid fa-server"></i> SMTP Server Host <span class="required">*</span></label>
+              <input type="text" id="smtp-host" placeholder="smtp.gmail.com" value="smtp.gmail.com" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="smtp-port"><i class="fa-solid fa-network-wired"></i> Port <span class="required">*</span></label>
+              <input type="number" id="smtp-port" placeholder="465" value="465" required>
+              <small class="field-hint">Use <strong>465</strong> for SSL (recommended on cloud) or <strong>587</strong> for TLS.</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label for="smtp-user"><i class="fa-solid fa-user"></i> SMTP Username / Login Email <span class="required">*</span></label>
+              <input type="email" id="smtp-user" placeholder="your.email@cmplibe.com" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="smtp-pass"><i class="fa-solid fa-key"></i> SMTP Password / App Password <span class="required">*</span></label>
+              <input type="password" id="smtp-pass" placeholder="••••••••••••••••">
+            </div>
+          </div>
+
+          <div class="info-banner" style="margin: 10px 0 16px 0;">
+            <i class="fa-solid fa-circle-info text-cyan"></i>
+            <div>
+              <strong>For Google Workspace / Gmail:</strong> Generate a 16-character <strong>App Password</strong> at <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color: var(--color-primary); text-decoration: underline;">Google Account > Security > 2-Step Verification > App Passwords</a> and paste it into the Password field above. Use <strong>Port 465</strong> for fastest cloud delivery.
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="sender-email"><i class="fa-solid fa-paper-plane"></i> Sender Email Header (Optional)</label>
+            <input type="email" id="sender-email" placeholder="cMPLiBe AIScanner <alerts@cmplibe.com>">
+          </div>
+
+          <!-- Step 1 Test Connection Button -->
+          <div style="margin-top: 14px; margin-bottom: 16px;">
+            <button type="button" id="btn-test-smtp-conn" class="btn-secondary" style="width: 100%; padding: 10px; font-weight: 700;" onclick="handleTestSmtpConnection()">
+              <i class="fa-solid fa-plug"></i> Step 1: Test Mail Server Connection & Authentication
+            </button>
+          </div>
+
+          <!-- Step 2 Test Dispatched Email -->
+          <div style="margin-bottom: 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;">
+            <label style="font-size: 13px; font-weight: 600; color: #bae6fd; margin-bottom: 8px; display: block;">
+              <i class="fa-solid fa-paper-plane text-cyan"></i> Step 2: Send Test Email Alert to Configured Recipients
+            </label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button type="button" class="btn-secondary" style="flex: 1; min-width: 220px; font-size: 12.5px; padding: 8px 14px;" onclick="handleSendTestEmail('target')">
+                <i class="fa-solid fa-crosshairs"></i> Test Send Target Radar Email
+              </button>
+              <button type="button" class="btn-secondary" style="flex: 1; min-width: 220px; font-size: 12.5px; padding: 8px 14px;" onclick="handleSendTestEmail('all_india')">
+                <i class="fa-solid fa-earth-asia"></i> Test Send All-India Alert Email
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3 Save Settings Button -->
+          <div class="form-row" style="margin-top: 16px; gap: 16px;">
+            <button type="submit" id="btn-save-settings" class="btn-primary" style="flex: 1; padding: 12px; font-size: 14px;">
+              <i class="fa-solid fa-floppy-disk"></i> Step 3: Save System & Email Settings (Activate 24/7 Alerts)
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Team Password & Security Management Card -->
+      <div class="glass-card settings-card" style="margin-top: 24px; border-top: 3px solid #10b981;">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-key text-green"></i> My Account Password</h3>
+          <span class="badge live-badge"><i class="fa-solid fa-lock"></i> Protected</span>
+        </div>
+        <p class="card-desc">
+          Update your individual password. When changed, your session will require the new password.
+        </p>
+        <form id="change-password-form" onsubmit="handleChangePassword(event)">
+          <div class="form-row">
+            <div class="form-group" style="flex: 1;">
+              <label for="old-password"><i class="fa-solid fa-lock-open"></i> Current Password <span class="required">*</span></label>
+              <input type="password" id="old-password" placeholder="Enter current password" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="new-password"><i class="fa-solid fa-key"></i> New Password (min 6 chars) <span class="required">*</span></label>
+              <input type="password" id="new-password" placeholder="Enter new password" minlength="6" required>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top: 12px;">
+            <button type="submit" id="btn-change-password" class="btn-secondary" style="font-size: 13px; padding: 8px 18px;">
+              <i class="fa-solid fa-shield-check"></i> Update Password
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Admin User Management Panel (Visible to Admins) -->
+      <div id="admin-user-management-card" class="glass-card settings-card hidden" style="margin-top: 24px; border-top: 3px solid #8b5cf6;">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-users-gear text-purple"></i> Team User Accounts & Access Management</h3>
+          <span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3);"><i class="fa-solid fa-shield-halved"></i> Admin Control</span>
+        </div>
+        <p class="card-desc">
+          Add team members with unique usernames and passwords. Admins have complete control to add users, reset passwords, change access roles, or deactivate accounts.
+        </p>
+
+        <!-- Add User Form -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+          <h4 style="font-size: 14px; color: #f8fafc; margin-bottom: 12px;"><i class="fa-solid fa-user-plus text-green"></i> Add New Team Member</h4>
+          <form id="add-user-form" onsubmit="handleAddUser(event)">
+            <div class="form-row">
+              <div class="form-group" style="flex: 1.2;">
+                <label for="new-user-username"><i class="fa-solid fa-user"></i> Username <span class="required">*</span></label>
+                <input type="text" id="new-user-username" placeholder="e.g. rahul_recruiter" required autocomplete="off">
+              </div>
+              <div class="form-group" style="flex: 1.2;">
+                <label for="new-user-password"><i class="fa-solid fa-lock"></i> Initial Password <span class="required">*</span></label>
+                <input type="password" id="new-user-password" placeholder="min 6 chars" minlength="6" required autocomplete="new-password">
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label for="new-user-role"><i class="fa-solid fa-id-badge"></i> Access Role</label>
+                <select id="new-user-role">
+                  <option value="member" selected>Member (Scan & Sourcing)</option>
+                  <option value="admin">Admin (Full Control)</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" id="btn-add-user" class="btn-primary" style="font-size: 13px; padding: 8px 18px; margin-top: 8px;">
+              <i class="fa-solid fa-user-check"></i> Create User Account
+            </button>
+          </form>
+        </div>
+
+        <!-- Team Users List Table -->
+        <h4 style="font-size: 14px; color: #f8fafc; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <span><i class="fa-solid fa-list-check"></i> Registered Team Accounts</span>
+          <button type="button" class="btn-secondary" style="font-size: 11px; padding: 4px 10px;" onclick="loadTeamUsers()">
+            <i class="fa-solid fa-arrows-rotate"></i> Refresh Users
+          </button>
+        </h4>
+        <div class="radar-logs-wrapper" style="max-height: 320px;">
+          <table class="radar-logs-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created (IST)</th>
+                <th>Last Login (IST)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="team-users-tbody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">Loading team accounts...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

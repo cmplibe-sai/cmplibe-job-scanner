@@ -857,7 +857,8 @@
           <div class="form-group">
             <label><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Provider Preset</label>
             <div class="preset-chips">
-              <button type="button" class="chip" onclick="applySmtpPreset('gmail_ssl')"><i class="fa-brands fa-google"></i> Google Workspace / Gmail (smtp.gmail.com:465 SSL - Recommended)</button>
+              <button type="button" class="chip" onclick="applySmtpPreset('resend')" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-weight: 700;"><i class="fa-solid fa-bolt"></i> Resend HTTPS API (Recommended for Render Cloud — Port 443)</button>
+              <button type="button" class="chip" onclick="applySmtpPreset('gmail_ssl')"><i class="fa-brands fa-google"></i> Google Workspace / Gmail (smtp.gmail.com:465 SSL)</button>
               <button type="button" class="chip" onclick="applySmtpPreset('gmail')"><i class="fa-brands fa-google"></i> Gmail (smtp.gmail.com:587 TLS)</button>
               <button type="button" class="chip" onclick="applySmtpPreset('hostinger')"><i class="fa-solid fa-envelope"></i> Hostinger Webmail (smtp.hostinger.com:465)</button>
               <button type="button" class="chip" onclick="applySmtpPreset('outlook')"><i class="fa-brands fa-microsoft"></i> Outlook / Hotmail (smtp-mail.outlook.com:587)</button>

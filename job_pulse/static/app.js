@@ -1506,7 +1506,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.applySmtpPreset = (provider) => {
-    if (provider === "gmail_ssl") {
+    if (provider === "resend") {
+      document.getElementById("smtp-host").value = "resend";
+      document.getElementById("smtp-port").value = 443;
+      document.getElementById("smtp-user").value = "resend";
+      const passEl = document.getElementById("smtp-pass");
+      passEl.placeholder = "Paste your Resend API Key (re_...)";
+      if (!passEl.value || !passEl.value.startsWith("re_")) {
+        passEl.value = "";
+      }
+      document.getElementById("sender-email").value = "cMPLiBe AIScanner <onboarding@resend.dev>";
+      showToast("Applied Resend Cloud HTTPS API Preset (Port 443 - Cloud Firewall Proof)", "success");
+    } else if (provider === "gmail_ssl") {
       document.getElementById("smtp-host").value = "smtp.gmail.com";
       document.getElementById("smtp-port").value = 465;
       showToast("Applied Google Workspace / Gmail SSL preset (smtp.gmail.com:465 SSL)", "success");

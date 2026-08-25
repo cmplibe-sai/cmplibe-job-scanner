@@ -92,8 +92,53 @@ class RadarEmailNotifier:
                 raise primary_err
 
     @classmethod
+    def is_resend_mode(cls, config: Dict[str, Any]) -> bool:
+        """Check if configuration is targeting Resend HTTPS API."""
+        host = (config.get("smtp_host") or "").strip().lower()
+        password_or_key = (config.get("smtp_password") or "").strip()
+        user = (config.get("smtp_user") or "").strip()
+        service = (config.get("email_service") or "").strip().lower()
+        return (
+            service == "resend"
+            or host in ["resend", "api.resend.com"]
+            or password_or_key.startswith("re_")
+            or user.startswith("re_")
+        )
+
+    @classmethod
+    def get_resend_api_key(cls, config: Dict[str, Any]) -> str:
+        """Extract Resend API key from password or username fields."""
+        password_or_key = (config.get("smtp_password") or "").strip()
+        user = (config.get("smtp_user") or "").strip()
+        if password_or_key.startswith("re_"):
+            return password_or_key
+        if user.startswith("re_"):
+            return user
+        return password_or_key
+
+    @classmethod
     def test_smtp_connection(cls, config: Dict[str, Any]) -> Tuple[bool, str, int]:
-        """Test SMTP server connectivity and authentication without dispatching an email."""
+        """Test email server/API connectivity and authentication without dispatching an email."""
+        if cls.is_resend_mode(config):
+            api_key = cls.get_resend_api_key(config)
+            if not api_key:
+                return False, "Resend API Key is required (starts with re_...).", 443
+            try:
+                import requests
+                resp = requests.get(
+                    "https://api.resend.com/api-keys",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=10,
+                )
+                if resp.status_code == 200 or (resp.status_code == 401 and "restricted_api_key" in resp.text):
+                    return True, "Successfully connected & authenticated with Resend HTTPS API (Port 443)!", 443
+                elif "invalid" in resp.text.lower():
+                    return False, "Resend Authentication Failed: Invalid API Key. Please copy your key from resend.com/api-keys.", 443
+                else:
+                    return True, "Successfully connected to Resend HTTPS API (Port 443)!", 443
+            except Exception as e:
+                return False, f"Failed to reach Resend HTTPS API: {e}", 443
+
         host = config.get("smtp_host", "smtp.gmail.com").strip()
         port = int(config.get("smtp_port", 465))
         user = config.get("smtp_user", "").strip()
@@ -118,8 +163,73 @@ class RadarEmailNotifier:
             err_msg = str(e)
             if "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
                 alt_hint = "587 (TLS)" if port == 465 else "465 (SSL)"
-                return False, f"Connection timed out to {host}:{port}. Cloud hosting or network firewalls may be blocking this port. Please try port {alt_hint}.", (587 if port == 465 else 465)
+                return False, f"Connection timed out to {host}:{port}. Cloud hosting or network firewalls may be blocking this port. Please try port {alt_hint} or switch to Resend HTTPS API.", (587 if port == 465 else 465)
             return False, f"Connection test failed: {err_msg}", port
+
+    @classmethod
+    def dispatch_email(
+        cls,
+        config: Dict[str, Any],
+        sender: str,
+        recipient: str,
+        subject: str,
+        html_body: str,
+    ) -> Tuple[bool, str]:
+        """Dispatch email either via Resend HTTPS API (Port 443) or direct SMTP."""
+        if not recipient:
+            return False, "Recipient email address is required."
+
+        if cls.is_resend_mode(config):
+            api_key = cls.get_resend_api_key(config)
+            if not api_key:
+                return False, "Resend API Key is required."
+
+            import requests
+            from_header = sender or "cMPLiBe AIScanner <onboarding@resend.dev>"
+            if "@" not in from_header or ("resend.dev" not in from_header and "cmplibe.com" not in from_header):
+                from_header = "cMPLiBe AIScanner <onboarding@resend.dev>"
+
+            try:
+                resp = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "from": from_header,
+                        "to": [recipient],
+                        "subject": subject,
+                        "html": html_body,
+                    },
+                    timeout=15,
+                )
+                if resp.status_code in [200, 201]:
+                    return True, f"Email delivered via Resend API to {recipient}"
+                else:
+                    err_msg = resp.text
+                    try:
+                        err_json = resp.json()
+                        err_msg = err_json.get("message") or err_msg
+                    except Exception:
+                        pass
+                    return False, f"Resend API Error: {err_msg}"
+            except Exception as e:
+                return False, f"Resend delivery failed: {str(e)}"
+
+        # Default: Send via SMTP
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"cMPLiBe's AIScanner <{sender}>" if "<" not in sender else sender
+        msg["To"] = recipient
+        msg.attach(MIMEText(html_body, "html"))
+
+        try:
+            with cls._create_smtp_connection(config) as server:
+                server.sendmail(sender, [recipient], msg.as_string())
+            return True, f"Email successfully sent to {recipient}"
+        except smtplib.SMTPAuthenticationError as e:
+            return False, f"SMTP Authentication failed: Invalid username or password ({e})"
+        except Exception as e:
+            logger.error(f"Failed to send email: {e}")
+            return False, f"Email delivery failed: {str(e)}"
 
     @staticmethod
     def _format_location_and_mode(job: Dict[str, Any]) -> str:
@@ -152,19 +262,17 @@ class RadarEmailNotifier:
 
     @classmethod
     def send_test_email(cls, config: Dict[str, Any], recipient: str) -> Tuple[bool, str]:
-        """Send a test email to verify SMTP configuration."""
+        """Send a test email to verify email configuration."""
         if not recipient:
             return False, "Recipient email address is required."
 
-        sender = config.get("sender_email") or config.get("smtp_user") or "aiscanner@cmplibe.com"
+        is_resend = cls.is_resend_mode(config)
+        sender = config.get("sender_email") or ("cMPLiBe AIScanner <onboarding@resend.dev>" if is_resend else config.get("smtp_user") or "aiscanner@cmplibe.com")
         
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "✓ cMPLiBe's AIScanner: Email Alert System Connected Successfully"
-        msg["From"] = f"cMPLiBe's AIScanner <{sender}>"
-        msg["To"] = recipient
-
         from job_pulse.utils.time_utils import get_ist_display
         now_ist = get_ist_display()
+
+        provider_name = "Resend HTTPS API (Port 443)" if is_resend else f"SMTP ({config.get('smtp_host')}:{config.get('smtp_port')})"
 
         html_body = f"""
         <!DOCTYPE html>
@@ -192,9 +300,9 @@ class RadarEmailNotifier:
             <div class="content">
               <span class="badge">Connection Verified</span>
               <h2 style="color: #ffffff; margin-top: 12px;">Radar Notifications Are Active!</h2>
-              <p>This test confirms that your SMTP mail settings are configured properly. You will now receive automated email alerts whenever your watched target companies publish new openings, fresher profiles, internships, or recruiter hiring requirements.</p>
+              <p>This test confirms that your email alert settings are configured properly. You will now receive automated 24/7 email alerts whenever your watched target companies publish new openings, fresher profiles, internships, or recruiter hiring requirements.</p>
               <div class="info-box">
-                <strong>Configured SMTP Host:</strong> {config.get('smtp_host')}:{config.get('smtp_port')}<br>
+                <strong>Delivery Channel:</strong> {provider_name}<br>
                 <strong>Sender Address:</strong> {sender}<br>
                 <strong>Timestamp:</strong> {now_ist}
               </div>
@@ -207,17 +315,8 @@ class RadarEmailNotifier:
         </html>
         """
 
-        msg.attach(MIMEText(html_body, "html"))
-
-        try:
-            with cls._create_smtp_connection(config) as server:
-                server.sendmail(sender, [recipient], msg.as_string())
-            return True, f"Test email successfully sent to {recipient}"
-        except smtplib.SMTPAuthenticationError as e:
-            return False, f"SMTP Authentication failed: Invalid username or password ({e})"
-        except Exception as e:
-            logger.error(f"Failed to send test email: {e}")
-            return False, f"Email delivery failed: {str(e)}"
+        subject = "✓ cMPLiBe's AIScanner: Email Alert System Connected Successfully"
+        return cls.dispatch_email(config, sender, recipient, subject, html_body)
 
     @staticmethod
     def _is_valid_job_for_email(job: Dict[str, Any], target_company: str = "") -> bool:
@@ -252,123 +351,7 @@ class RadarEmailNotifier:
         total_items = len(valid_jobs) + len(valid_posts)
 
         subject = f"🎯 Radar Alert: {total_items} New Opportunities at {company_name}"
-        
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"cMPLiBe's AIScanner <{sender}>"
-        msg["To"] = recipient
-
-        # Build Job Cards HTML
-        jobs_html = ""
-        for job in valid_jobs:
-            exp_badge = job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")
-            loc_mode_text = cls._format_location_and_mode(job)
-            portal = job.get("source_portal") or "Career Site"
-            url = job.get("url") or "#"
-            title = job.get("title") or "Opportunity"
-
-            jobs_html += f"""
-            <div style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-              <div style="margin-bottom: 8px;">
-                <h3 style="margin: 0; font-size: 16px; color: #38bdf8;">
-                  <a href="{url}" style="color: #38bdf8; text-decoration: none; font-weight: 600;">{title}</a>
-                </h3>
-              </div>
-              <div style="margin: 8px 0; font-size: 13px; line-height: 1.9;">
-                <span style="display: inline-block; background: #1e293b; color: #a5b4fc; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">🌐 {portal}</span>
-                <span style="display: inline-block; background: #1e293b; color: #34d399; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">💼 {exp_badge}</span>
-                <span style="display: inline-block; background: #1e293b; color: #f472b6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">{loc_mode_text}</span>
-              </div>
-              <div style="margin-top: 12px;">
-                <a href="{url}" style="display: inline-block; background: #0284c7; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none;">
-                  Apply / View Opening →
-                </a>
-              </div>
-            </div>
-            """
-
-        # Build Recruiter Posts HTML
-        posts_html = ""
-        for post in new_posts:
-            poster = post.get("poster_name") or "HR / Recruiter"
-            role = post.get("role_title") or "Hiring Opportunity"
-            snippet = (post.get("post_text") or "")[:280] + ("..." if len(post.get("post_text") or "") > 280 else "")
-            post_url = post.get("post_url") or "#"
-            contact = post.get("contact_email") or post.get("contact_phone") or "Via LinkedIn"
-
-            posts_html += f"""
-            <div style="background: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 16px; margin-bottom: 12px; border-left: 4px solid #ec4899;">
-              <div style="margin-bottom: 6px;">
-                <span style="color: #ec4899; font-weight: bold; font-size: 13px;">📢 Recruiter / HR Post</span> • 
-                <strong style="color: #f8fafc; font-size: 13px;">{poster}</strong>
-              </div>
-              <h4 style="margin: 4px 0 8px 0; font-size: 15px; color: #f1f5f9;">Role: {role}</h4>
-              <p style="font-size: 13px; color: #cbd5e1; background: #1e293b; padding: 10px; border-radius: 6px; font-style: italic; margin: 8px 0;">
-                "{snippet}"
-              </p>
-              <div style="font-size: 12px; color: #34d399; margin: 8px 0;">
-                <strong>Contact / Info:</strong> {contact}
-              </div>
-              <div style="margin-top: 10px;">
-                <a href="{post_url}" style="display: inline-block; background: #db2777; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none;">
-                  View LinkedIn Post & Apply →
-                </a>
-              </div>
-            </div>
-            """
-
-        from job_pulse.utils.time_utils import get_ist_display
-        now_ist = get_ist_display()
-
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b1120; color: #f1f5f9; padding: 20px; }}
-            .container {{ max-width: 640px; margin: 0 auto; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }}
-            .header {{ background: linear-gradient(135deg, #0284c7, #0f766e); padding: 28px 24px; }}
-            .header h1 {{ margin: 0; font-size: 22px; color: #ffffff; }}
-            .header p {{ margin: 6px 0 0 0; color: #e0f2fe; font-size: 13px; }}
-            .content {{ padding: 24px; }}
-            .section-title {{ font-size: 16px; color: #f8fafc; font-weight: bold; margin: 20px 0 10px 0; border-bottom: 1px solid #334155; padding-bottom: 6px; }}
-            .footer {{ padding: 16px 24px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #334155; }}
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎯 cMPLiBe's AIScanner Target Company Radar</h1>
-              <p>Fresh opportunities detected for <strong>{company_name}</strong> • Heartland • Growth-Mindset • Opportunities</p>
-            </div>
-            <div class="content">
-              <p style="margin-top: 0; font-size: 14px; color: #cbd5e1;">
-                cMPLiBe's AIScanner detected <strong>{total_items} newly posted opening(s) & requirement(s)</strong> matching your target watchlist for <strong>{company_name}</strong> across official career portals, ATS, and recruiter feeds.
-              </p>
-
-              {f'<div class="section-title">💼 Open Job Vacancies ({len(valid_jobs)})</div>' + jobs_html if valid_jobs else ''}
-              {f'<div class="section-title">📢 Recruiter & Hiring Posts ({len(new_posts)})</div>' + posts_html if new_posts else ''}
-
-            </div>
-            <div class="footer">
-              cMPLiBe's AIScanner Target Company Radar • Generated on {now_ist}
-            </div>
-          </div>
-        </body>
-        </html>
-        """
-
-        msg.attach(MIMEText(html_body, "html"))
-
-        try:
-            with cls._create_smtp_connection(config) as server:
-                server.sendmail(sender, [recipient], msg.as_string())
-            logger.info(f"Successfully emailed radar alert for '{company_name}' to {recipient}")
-            return True, f"Emailed {total_items} new alert(s) for {company_name} to {recipient}"
-        except Exception as e:
-            logger.error(f"Failed to email radar alert for {company_name}: {e}")
-            return False, str(e)
+        return cls.dispatch_email(config, sender, recipient, subject, html_body)
 
     @classmethod
     def send_all_india_alert(
@@ -400,11 +383,6 @@ class RadarEmailNotifier:
         intern_count = sum(1 for j in valid_jobs if j.get("is_internship"))
 
         subject = f"🇮🇳 All-India Job Alert: {total_items} New Opportunities Discovered"
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"cMPLiBe's AIScanner (All-India Radar) <{sender}>"
-        msg["To"] = recipient
 
         # Build Job Cards HTML
         jobs_html = ""
@@ -528,14 +506,5 @@ class RadarEmailNotifier:
         </html>
         """
 
-        msg.attach(MIMEText(html_body, "html"))
-
-        try:
-            with cls._create_smtp_connection(config) as server:
-                server.sendmail(sender, [recipient], msg.as_string())
-            logger.info(f"Successfully emailed All-India radar alert ({total_items} items) to {recipient}")
-            return True, f"Emailed {total_items} new All-India opportunity alert(s) to {recipient}"
-        except Exception as e:
-            logger.error(f"Failed to email All-India radar alert: {e}")
-            return False, str(e)
+        return cls.dispatch_email(config, sender, recipient, subject, html_body)
 

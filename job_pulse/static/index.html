@@ -780,7 +780,7 @@
           Configure two separate email alert channels: one dedicated to your watched target companies, and one for broad All-India multi-portal job discoveries.
         </p>
 
-        <form id="settings-form" onsubmit="handleSaveSettings(event)">
+        <form id="settings-form" novalidate onsubmit="handleSaveSettings(event)">
           <!-- Dual Recipient Configuration Cards -->
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
             <!-- Card 1: Target Company Watchlist Recipient -->
@@ -880,7 +880,7 @@
           <div class="form-row">
             <div class="form-group" style="flex: 1;">
               <label for="smtp-user"><i class="fa-solid fa-user"></i> SMTP Username / Login Email <span class="required">*</span></label>
-              <input type="email" id="smtp-user" placeholder="your.email@cmplibe.com" required>
+              <input type="text" id="smtp-user" placeholder="resend or your.email@cmplibe.com" required>
             </div>
             <div class="form-group" style="flex: 1;">
               <label for="smtp-pass"><i class="fa-solid fa-key"></i> SMTP Password / App Password <span class="required">*</span></label>
@@ -897,7 +897,7 @@
 
           <div class="form-group">
             <label for="sender-email"><i class="fa-solid fa-paper-plane"></i> Sender Email Header (Optional)</label>
-            <input type="email" id="sender-email" placeholder="cMPLiBe AIScanner <alerts@cmplibe.com>">
+            <input type="text" id="sender-email" placeholder="cMPLiBe AIScanner <alerts@cmplibe.com>">
           </div>
 
           <!-- Step 1 Test Connection Button -->

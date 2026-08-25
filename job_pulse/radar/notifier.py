@@ -185,9 +185,11 @@ class RadarEmailNotifier:
                 return False, "Resend API Key is required."
 
             import requests
-            from_header = sender or "cMPLiBe AIScanner <onboarding@resend.dev>"
-            if "@" not in from_header or ("resend.dev" not in from_header and "cmplibe.com" not in from_header):
-                from_header = "cMPLiBe AIScanner <onboarding@resend.dev>"
+            from_header = (sender or "").strip()
+            if not from_header or "@" not in from_header or "onboarding@resend.dev" in from_header:
+                from_header = "cMPLiBe AIScanner <alerts@cmplibe.com>"
+            elif "<" not in from_header and "@" in from_header:
+                from_header = f"cMPLiBe AIScanner <{from_header}>"
 
             try:
                 resp = requests.post(

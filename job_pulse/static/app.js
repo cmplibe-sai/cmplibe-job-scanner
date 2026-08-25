@@ -1515,7 +1515,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!passEl.value || !passEl.value.startsWith("re_")) {
         passEl.value = "";
       }
-      document.getElementById("sender-email").value = "cMPLiBe AIScanner <onboarding@resend.dev>";
+      document.getElementById("sender-email").value = "cMPLiBe AIScanner <alerts@cmplibe.com>";
       showToast("Applied Resend Cloud HTTPS API Preset (Port 443 - Cloud Firewall Proof)", "success");
     } else if (provider === "gmail_ssl") {
       document.getElementById("smtp-host").value = "smtp.gmail.com";

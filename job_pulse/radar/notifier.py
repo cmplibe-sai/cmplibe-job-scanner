@@ -10,12 +10,48 @@ from datetime import datetime
 logger = logging.getLogger("job_pulse.radar.notifier")
 
 
+class IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """Custom SMTP_SSL client forcing IPv4 address resolution to prevent [Errno 101] Network is unreachable on cloud hosts without IPv6 gateways."""
+    def __init__(self, host="", port=0, **kwargs):
+        self._target_hostname = host
+        super().__init__(**kwargs)
+
+    def _get_socket(self, host, port, timeout):
+        import socket
+        target = self._target_hostname or host
+        addr_info = socket.getaddrinfo(target, port, socket.AF_INET, socket.SOCK_STREAM)
+        ip = addr_info[0][4][0]
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        timeout_val = timeout if isinstance(timeout, (int, float)) else 15.0
+        s.settimeout(timeout_val)
+        s.connect((ip, port))
+        return self.context.wrap_socket(s, server_hostname=target)
+
+
+class IPv4SMTP(smtplib.SMTP):
+    """Custom SMTP client forcing IPv4 address resolution to prevent [Errno 101] Network is unreachable on cloud hosts."""
+    def __init__(self, host="", port=0, **kwargs):
+        self._target_hostname = host
+        super().__init__(**kwargs)
+
+    def _get_socket(self, host, port, timeout):
+        import socket
+        target = self._target_hostname or host
+        addr_info = socket.getaddrinfo(target, port, socket.AF_INET, socket.SOCK_STREAM)
+        ip = addr_info[0][4][0]
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        timeout_val = timeout if isinstance(timeout, (int, float)) else 15.0
+        s.settimeout(timeout_val)
+        s.connect((ip, port))
+        return s
+
+
 class RadarEmailNotifier:
     """Handles HTML email generation and SMTP delivery for cMPLiBe's AIScanner Company Radar."""
 
     @classmethod
     def _create_smtp_connection(cls, config: Dict[str, Any]) -> smtplib.SMTP:
-        """Create and authenticate an SMTP connection supporting standard TLS (587) or SSL (465) with automatic fallback and hostname-based SSL verification."""
+        """Create and authenticate an SMTP connection supporting standard TLS (587) or SSL (465) with IPv4 resolution and SNI validation."""
         host = config.get("smtp_host", "smtp.gmail.com").strip()
         port = int(config.get("smtp_port", 465))
         user = config.get("smtp_user", "").strip()
@@ -25,11 +61,14 @@ class RadarEmailNotifier:
 
         def _connect_to(target_port: int) -> smtplib.SMTP:
             if target_port == 465:
-                srv = smtplib.SMTP_SSL(host, target_port, context=context, timeout=15)
+                srv = IPv4SMTP_SSL(host=host, context=context, timeout=15)
+                srv.connect(host, target_port)
                 srv.ehlo()
             else:
-                srv = smtplib.SMTP(host, target_port, timeout=15)
+                srv = IPv4SMTP(host=host, timeout=15)
+                srv.connect(host, target_port)
                 srv.ehlo()
+                srv._host = host
                 srv.starttls(context=context)
                 srv.ehlo()
 

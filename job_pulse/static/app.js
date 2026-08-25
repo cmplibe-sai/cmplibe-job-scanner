@@ -1484,10 +1484,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const discoveryRecipDisplay = document.getElementById("discovery-recipient-display");
       const discoveryIntervalDisplay = document.getElementById("discovery-interval-display");
 
-      if (hostEl) hostEl.value = config.smtp_host || "smtp.gmail.com";
-      if (portEl) portEl.value = config.smtp_port || 465;
-      if (userEl) userEl.value = config.smtp_user || "";
-      if (senderEl) senderEl.value = config.sender_email || "";
+      if (hostEl) hostEl.value = config.smtp_host || "resend";
+      if (portEl) portEl.value = config.smtp_port || 443;
+      if (userEl) userEl.value = config.smtp_user || "resend";
+      if (senderEl) senderEl.value = config.sender_email || "cMPLiBe AIScanner <alerts@cmplibe.com>";
+
+      const passEl = document.getElementById("smtp-pass");
+      if (passEl && config.smtp_password_set) {
+        passEl.placeholder = (config.smtp_host === "resend" || config.smtp_user === "resend") ? "•••••••• (Resend API Key Saved)" : "•••••••• (Password Saved)";
+      }
 
       if (recipientEl) recipientEl.value = config.recipient_email || "";
       if (enabledEl) enabledEl.checked = !!config.is_enabled;

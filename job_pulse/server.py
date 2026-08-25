@@ -524,7 +524,11 @@ def delete_radar_target(target_id: str, user: str = Depends(get_current_user)):
 @app.get("/api/radar/settings")
 def get_radar_settings(user: str = Depends(get_current_user)):
     """Fetch current email notification and Radar settings."""
-    return db.get_email_config()
+    cfg = db.get_email_config()
+    cfg_copy = dict(cfg)
+    cfg_copy["smtp_password_set"] = bool(cfg.get("smtp_password"))
+    cfg_copy["smtp_password"] = ""  # Don't leak raw credentials to client
+    return cfg_copy
 
 
 @app.post("/api/radar/settings")
@@ -535,18 +539,21 @@ def save_radar_settings(config: EmailConfig, user: str = Depends(get_current_use
     # Preserve existing password if user left password field blank when saving recipients
     if not cfg_dict.get("smtp_password") and curr.get("smtp_password"):
         cfg_dict["smtp_password"] = curr["smtp_password"]
+    # Ensure default sender header uses cmplibe.com if left blank or on test domain
+    if not cfg_dict.get("sender_email") or "onboarding@resend.dev" in cfg_dict.get("sender_email", ""):
+        cfg_dict["sender_email"] = "cMPLiBe AIScanner <alerts@cmplibe.com>"
     db.save_email_config(cfg_dict)
-    return {"success": True, "settings": db.get_email_config()}
+    return {"success": True, "settings": get_radar_settings(user=user)}
 
 
 @app.post("/api/radar/test-connection")
 def test_smtp_connection(req: TestSmtpConnectionRequest, user: str = Depends(get_current_user)):
-    """Test SMTP mail server connection and authentication without sending an email."""
+    """Test SMTP mail server or Resend API connection and authentication without sending an email."""
     curr = db.get_email_config()
     smtp_dict = {
-        "smtp_host": (req.smtp_host or "").strip() or curr.get("smtp_host", "smtp.gmail.com"),
-        "smtp_port": req.smtp_port or curr.get("smtp_port", 465),
-        "smtp_user": (req.smtp_user or "").strip() or curr.get("smtp_user", ""),
+        "smtp_host": (req.smtp_host or "").strip() or curr.get("smtp_host", "resend"),
+        "smtp_port": req.smtp_port or curr.get("smtp_port", 443),
+        "smtp_user": (req.smtp_user or "").strip() or curr.get("smtp_user", "resend"),
         "smtp_password": (req.smtp_password or "").strip() or curr.get("smtp_password", ""),
     }
     success, msg, recommended_port = RadarEmailNotifier.test_smtp_connection(smtp_dict)
@@ -557,14 +564,14 @@ def test_smtp_connection(req: TestSmtpConnectionRequest, user: str = Depends(get
 
 @app.post("/api/radar/test-email")
 def test_radar_email(req: TestEmailRequest, user: str = Depends(get_current_user)):
-    """Test SMTP email delivery with current or provided credentials."""
+    """Test email delivery with current or provided credentials."""
     curr = db.get_email_config()
     smtp_dict = {
-        "smtp_host": (req.smtp_host or "").strip() or curr.get("smtp_host", "smtp.gmail.com"),
-        "smtp_port": req.smtp_port or curr.get("smtp_port", 465),
-        "smtp_user": (req.smtp_user or "").strip() or curr.get("smtp_user", ""),
+        "smtp_host": (req.smtp_host or "").strip() or curr.get("smtp_host", "resend"),
+        "smtp_port": req.smtp_port or curr.get("smtp_port", 443),
+        "smtp_user": (req.smtp_user or "").strip() or curr.get("smtp_user", "resend"),
         "smtp_password": (req.smtp_password or "").strip() or curr.get("smtp_password", ""),
-        "sender_email": (req.sender_email or "").strip() or curr.get("sender_email", ""),
+        "sender_email": (req.sender_email or "").strip() or curr.get("sender_email", "cMPLiBe AIScanner <alerts@cmplibe.com>"),
     }
     success, msg = RadarEmailNotifier.send_test_email(smtp_dict, req.recipient_email)
     if not success:

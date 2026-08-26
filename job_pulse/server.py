@@ -19,6 +19,7 @@ from job_pulse.radar.notifier import RadarEmailNotifier
 from job_pulse.radar.scheduler import get_radar_scheduler
 from job_pulse.security import create_session, validate_session, revoke_session
 from job_pulse.config import DATA_DIR
+from job_pulse.ai.bee_assistant import BeeAssistant
 
 root_path = os.getenv("ROOT_PATH", "").rstrip("/")
 app = FastAPI(
@@ -213,6 +214,19 @@ def delete_team_user(target_username: str, admin: str = Depends(require_admin)):
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"success": True, "message": msg}
+
+
+class BeeChatRequest(BaseModel):
+    message: str
+    context: Optional[str] = None
+
+
+@app.post("/api/ai/bee-chat")
+def bee_ai_chat(req: BeeChatRequest, user: str = Depends(get_current_user)):
+    """Interactive conversational knowledge assistant 'Bee' 🐝."""
+    role = db.get_user_role(user) or "member"
+    response = BeeAssistant.answer_question(query=req.message, user_role=role)
+    return response
 
 
 class DirectCareerRequest(BaseModel):
@@ -637,7 +651,14 @@ def get_discovery_logs(limit: int = 50, user: str = Depends(get_current_user)):
 @app.get("/api/sheets/settings")
 def get_sheets_settings(user: str = Depends(get_current_user)):
     """Fetch current Google Sheets live sync settings and statistics."""
-    return db.get_sheets_config()
+    cfg = db.get_sheets_config()
+    role = db.get_user_role(user) or "member"
+    cfg_copy = dict(cfg)
+    cfg_copy["user_role"] = role
+    cfg_copy["credentials_set"] = bool(cfg.get("credentials_json"))
+    if role != "admin":
+        cfg_copy["credentials_json"] = ""  # Hide raw credentials from members
+    return cfg_copy
 
 
 @app.post("/api/sheets/settings")

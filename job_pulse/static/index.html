@@ -68,7 +68,8 @@
 
         <div class="user-auth-bar" style="display: flex; align-items: center; gap: 10px;">
           <span class="user-pill" id="nav-user-pill" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); padding: 6px 14px; border-radius: 9999px; font-size: 12px; color: #f8fafc;">
-            <i class="fa-solid fa-user-shield text-green"></i> <strong id="nav-username">admin</strong>
+            <i class="fa-solid fa-user-shield text-green" id="nav-user-icon"></i> <strong id="nav-username">admin</strong>
+            <span id="nav-user-role-badge" style="font-size: 10px; background: rgba(14,165,233,0.2); color: #38bdf8; border: 1px solid rgba(14,165,233,0.4); padding: 2px 8px; border-radius: 6px; margin-left: 4px; font-weight: 700; text-transform: uppercase;">Admin</span>
           </span>
           <button type="button" class="btn-icon" id="btn-nav-logout" onclick="handleLogout()" title="Sign Out of Team Portal" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
             <i class="fa-solid fa-right-from-bracket"></i>
@@ -92,6 +93,9 @@
         </button>
         <button class="nav-tab" id="nav-tab-settings" onclick="switchMainTab('settings')">
           <i class="fa-solid fa-envelope-circle-check"></i> Email & System Settings
+        </button>
+        <button class="nav-tab" id="nav-tab-docs" onclick="switchMainTab('docs')">
+          <i class="fa-solid fa-book-open"></i> Guide & Playbook 📖
         </button>
       </nav>
 
@@ -1024,6 +1028,257 @@
         </div>
       </div>
     </main>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 6: KNOWLEDGE & PLAYBOOK DOCUMENTATION CENTER                  -->
+    <!-- ================================================================= -->
+    <main id="view-docs" class="main-grid hidden" style="grid-template-columns: 1fr;">
+      <div class="glass-card docs-master-card" style="padding: 28px;">
+        <!-- Docs Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-glass); padding-bottom: 20px; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <h2 style="font-size: 24px; margin: 0 0 6px 0; color: #f8fafc; display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-book-open-reader text-cyan"></i> Knowledge & Playbook Center
+            </h2>
+            <p style="margin: 0; color: var(--text-muted); font-size: 13.5px;">
+              Complete operational guide, search workflows, target radar setup, and role-based playbooks for team members and administrators.
+            </p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn-primary" onclick="openBeeWithPrompt('How do I add a new target company?')" style="font-size: 13px; padding: 8px 16px; background: linear-gradient(135deg, #f59e0b, #d97706); border-color: #f59e0b;">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Ask Bee 🐝
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-time Docs Search Input -->
+        <div class="form-group" style="margin-bottom: 20px;">
+          <div style="position: relative;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+            <input type="text" id="docs-search-input" onkeyup="handleDocsSearch(event)" placeholder="Search guides, how-to instructions, troubleshooting, and FAQs..." style="padding-left: 42px; font-size: 14px; background: rgba(255,255,255,0.04); border-color: var(--border-glass);">
+          </div>
+        </div>
+
+        <!-- Quick Jump Navigation Filter Chips -->
+        <div class="preset-chips" style="margin-bottom: 24px;">
+          <button type="button" class="chip active" id="chip-docs-all" onclick="filterDocsCategory('all')"><i class="fa-solid fa-layer-group"></i> All Topics</button>
+          <button type="button" class="chip" id="chip-docs-member" onclick="filterDocsCategory('member')"><i class="fa-solid fa-user"></i> 👤 Team Member Guide</button>
+          <button type="button" class="chip" id="chip-docs-admin" onclick="filterDocsCategory('admin')"><i class="fa-solid fa-shield-halved text-purple"></i> 👑 Admin Master Guide</button>
+          <button type="button" class="chip" id="chip-docs-radar" onclick="filterDocsCategory('radar')"><i class="fa-solid fa-crosshairs text-cyan"></i> Target Radar</button>
+          <button type="button" class="chip" id="chip-docs-sheets" onclick="filterDocsCategory('sheets')"><i class="fa-solid fa-table-cells text-green"></i> Google Sheets Sync</button>
+          <button type="button" class="chip" id="chip-docs-faq" onclick="filterDocsCategory('faq')"><i class="fa-solid fa-circle-question text-pink"></i> FAQs</button>
+        </div>
+
+        <!-- SECTION 1: Member Quickstart Playbook -->
+        <div class="docs-section-card" data-category="member" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; padding: 22px; margin-bottom: 20px; border-left: 4px solid #0ea5e9;">
+          <h3 style="color: #38bdf8; font-size: 17px; margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-user-graduate"></i> 👤 Team Member Quickstart Guide
+          </h3>
+          <p style="font-size: 13.5px; color: #cbd5e1; line-height: 1.6; margin-bottom: 16px;">
+            Welcome to cMPLiBe AIScanner! As a team member, you have direct access to search live job opportunities across 9+ portals, add new target companies to the automated Radar, and review recruiter posts.
+          </p>
+          
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <!-- Step 1 Card -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><span class="badge" style="background: #0284c7; color: #fff; margin-right: 6px;">1</span> Searching Opportunities</h4>
+              <ul style="font-size: 13px; color: #94a3b8; padding-left: 18px; margin: 0; line-height: 1.6;">
+                <li>Go to <strong>Opportunity Explorer</strong>.</li>
+                <li>Search by <strong>Role</strong> (e.g., <em>Category Manager, React Dev</em>) or by <strong>Company</strong>.</li>
+                <li>Click <strong>'Scan Portals Now'</strong> to scrape LinkedIn, Naukri, Internshala, and Unstop in real-time.</li>
+                <li>Use the <strong>Technical vs Non-Technical</strong> filters to refine your sourcing list.</li>
+              </ul>
+            </div>
+
+            <!-- Step 2 Card -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><span class="badge" style="background: #0284c7; color: #fff; margin-right: 6px;">2</span> Adding Target Companies</h4>
+              <ul style="font-size: 13px; color: #94a3b8; padding-left: 18px; margin: 0; line-height: 1.6;">
+                <li>Go to <strong>Target Company Radar</strong>.</li>
+                <li>Click the green <strong>'+ Add Target Company'</strong> button.</li>
+                <li>Enter the company name and career page link.</li>
+                <li>Specify keywords (e.g., <em>developer, product, intern</em>).</li>
+                <li>Click <strong>Save</strong> — the system will now monitor this company automatically!</li>
+              </ul>
+            </div>
+
+            <!-- Step 3 Card -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><span class="badge" style="background: #0284c7; color: #fff; margin-right: 6px;">3</span> Opportunity Outputs</h4>
+              <ul style="font-size: 13px; color: #94a3b8; padding-left: 18px; margin: 0; line-height: 1.6;">
+                <li><strong>Live Table</strong>: Click any job title to open the direct official application page.</li>
+                <li><strong>Google Sheet Sync</strong>: All opportunities are automatically categorized and logged in Google Sheets.</li>
+                <li><strong>Recruiter Posts</strong>: View direct LinkedIn hiring posts with recruiter contact info.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: Admin Master Playbook -->
+        <div class="docs-section-card" data-category="admin" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; padding: 22px; margin-bottom: 20px; border-left: 4px solid #8b5cf6;">
+          <h3 style="color: #c084fc; font-size: 17px; margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-crown"></i> 👑 Administrator Master Playbook
+          </h3>
+          <p style="font-size: 13.5px; color: #cbd5e1; line-height: 1.6; margin-bottom: 16px;">
+            Administrators manage system security, outgoing mail servers (Resend API), Google Sheets service account credentials, and team member provisioning.
+          </p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <!-- Admin Step 1 -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><i class="fa-solid fa-users-gear text-purple"></i> Team User Management</h4>
+              <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0;">
+                In <strong>Email & System Settings</strong> under <em>Team User Accounts</em>, admins can create new member accounts, assign roles (<code>admin</code> vs <code>member</code>), reset passwords, and toggle account activation.
+              </p>
+            </div>
+
+            <!-- Admin Step 2 -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><i class="fa-solid fa-envelope-shield text-green"></i> 24/7 Email Alert Dispatch</h4>
+              <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0;">
+                Use the <strong>Resend HTTPS API (Port 443)</strong> preset. Resend delivers alerts over HTTPS, completely avoiding cloud SMTP port blocks (Port 465/587). Ensure sender header uses <code>alerts@cmplibe.com</code>.
+              </p>
+            </div>
+
+            <!-- Admin Step 3 -->
+            <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 16px;">
+              <h4 style="color: #f8fafc; font-size: 14.5px; margin: 0 0 8px 0;"><i class="fa-solid fa-server text-cyan"></i> 24/7 Hosting on Hostinger</h4>
+              <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0;">
+                Hostinger VPS provides 24/7 dedicated compute with persistent storage. Unlike Render Free (which sleeps after 15m), Hostinger never resets the database and runs background alerts continuously.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: Interactive FAQ Accordion -->
+        <div class="docs-section-card" data-category="faq" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-glass); border-radius: 12px; padding: 22px; margin-bottom: 20px; border-left: 4px solid #ec4899;">
+          <h3 style="color: #f472b6; font-size: 17px; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-circle-question"></i> ❓ Frequently Asked Questions (FAQs)
+          </h3>
+
+          <div class="faq-accordion-group">
+            <!-- FAQ 1 -->
+            <div class="faq-item" onclick="toggleFaq(this)">
+              <div class="faq-question">
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> How do I add a company that is not currently in the watchlist?</span>
+                <span class="badge" style="background: rgba(14,165,233,0.15); color: #38bdf8;">Target Radar</span>
+              </div>
+              <div class="faq-answer">
+                <p>To add any company to the Radar:</p>
+                <ol style="margin: 6px 0; padding-left: 20px;">
+                  <li>Click the <strong>Target Company Radar</strong> tab.</li>
+                  <li>Click the green <strong>'+ Add Target Company'</strong> button.</li>
+                  <li>Enter the Company Name (e.g. <em>Stripe, PhonePe, Khatabook</em>) and their career page URL.</li>
+                  <li>Enter role keywords to filter (e.g. <em>developer, product manager, intern</em>).</li>
+                  <li>Click <strong>Save & Start Tracking</strong>. The system will scan them automatically on every radar cycle!</li>
+                </ol>
+              </div>
+            </div>
+
+            <!-- FAQ 2 -->
+            <div class="faq-item" onclick="toggleFaq(this)">
+              <div class="faq-question">
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> What is the difference between Radar 1 and Radar 2?</span>
+                <span class="badge" style="background: rgba(139,92,246,0.15); color: #c084fc;">Alert Channels</span>
+              </div>
+              <div class="faq-answer">
+                <p><strong>Radar 1 (Target Company Watchlist)</strong>: Monitored specifically for your watched companies (e.g. <em>Jumbotail, Paytm, Swiggy</em>) across their direct ATS/Career pages and recruiter posts. Sent to your Target Recipient email.</p>
+                <p><strong>Radar 2 (All-India Multi-Portal Discovery)</strong>: Broad nationwide scan across 9+ job portals for high-demand tech & non-tech roles across major metro hubs. Sent to your All-India Recipient email.</p>
+              </div>
+            </div>
+
+            <!-- FAQ 3 -->
+            <div class="faq-item" onclick="toggleFaq(this)">
+              <div class="faq-question">
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> What can regular Team Members do vs Administrators?</span>
+                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399;">Role Access</span>
+              </div>
+              <div class="faq-answer">
+                <p><strong>Team Members</strong> can search opportunities, filter roles, add and manage target companies, trigger immediate scans, and view Google Sheet updates. Sensitive backend SMTP passwords and Google service account keys are safely hidden from members.</p>
+                <p><strong>Administrators</strong> have complete access to configure outgoing mail servers, Google Sheet service credentials, and create/deactivate team accounts.</p>
+              </div>
+            </div>
+
+            <!-- FAQ 4 -->
+            <div class="faq-item" onclick="toggleFaq(this)">
+              <div class="faq-question">
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> Why did the website disconnect on Render and how does Hostinger solve this?</span>
+                <span class="badge" style="background: rgba(245,158,11,0.15); color: #fbbf24;">24/7 Hosting</span>
+              </div>
+              <div class="faq-answer">
+                <p>Render Free Tier puts inactive web services into "Cold Sleep" after 15 minutes. When it wakes up, it starts a fresh temporary container that resets in-memory data and stops background scanning while asleep.</p>
+                <p>On <strong>Hostinger (VPS or Python Hosting)</strong>, the application runs 24/7 continuously with permanent SSD storage. The SQLite database is never erased, and background email alerts run nonstop 24 hours a day!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- FLOATING AI ASSISTANT "BEE" 🐝 WIDGET                            -->
+  <!-- ================================================================= -->
+  <!-- Bee Floating Action Button (FAB) -->
+  <div id="bee-ai-fab" class="bee-fab" onclick="toggleBeeChat()" title="Ask Bee 🐝 - cMPLiBe AI Assistant">
+    <div class="bee-fab-inner">
+      <span class="bee-icon">🐝</span>
+      <span class="bee-fab-label">Ask Bee</span>
+      <span class="bee-pulse-ring"></span>
+    </div>
+  </div>
+
+  <!-- Bee AI Chat Drawer / Window -->
+  <div id="bee-chat-widget" class="bee-chat-widget hidden">
+    <!-- Header -->
+    <div class="bee-chat-header">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="bee-avatar">🐝</div>
+        <div>
+          <h4 style="margin: 0; font-size: 14.5px; color: #f8fafc;">Bee Assistant</h4>
+          <span style="font-size: 11px; color: #34d399; display: flex; align-items: center; gap: 4px;">
+            <span style="width: 6px; height: 6px; background: #10b981; border-radius: 50%; display: inline-block;"></span> Online • Ready to Help
+          </span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button type="button" class="btn-icon-sm" onclick="clearBeeChat()" title="Clear Chat History">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+        <button type="button" class="btn-icon-sm" onclick="toggleBeeChat()" title="Close Assistant">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Suggestions Bar -->
+    <div class="bee-suggestions-bar">
+      <span style="font-size: 11px; color: #94a3b8; margin-right: 4px;">💡 Quick Ask:</span>
+      <button type="button" class="bee-suggestion-chip" onclick="sendBeeQuickPrompt('How do I add a new target company?')">Add Target Company</button>
+      <button type="button" class="bee-suggestion-chip" onclick="sendBeeQuickPrompt('How to search opportunities across portals?')">Search Portals</button>
+      <button type="button" class="bee-suggestion-chip" onclick="sendBeeQuickPrompt('What is the difference between Admin and Member?')">Admin vs Member</button>
+      <button type="button" class="bee-suggestion-chip" onclick="sendBeeQuickPrompt('How does Google Sheets Sync work?')">Google Sheets</button>
+      <button type="button" class="bee-suggestion-chip" onclick="sendBeeQuickPrompt('How do I set up email alerts?')">Email Alerts</button>
+    </div>
+
+    <!-- Messages Conversation Area -->
+    <div id="bee-messages-container" class="bee-messages-container">
+      <div class="bee-message bee-assistant-msg">
+        <div class="bee-msg-avatar">🐝</div>
+        <div class="bee-msg-content">
+          <p style="margin: 0 0 6px 0;">Bzz! Hello! I am <strong>Bee</strong> 🐝, your personal cMPLiBe AI Assistant!</p>
+          <p style="margin: 0; font-size: 12.5px; color: #cbd5e1;">Ask me anything about adding target companies, exploring opportunities across 9+ portals, setting up automated email alerts, or understanding team roles!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Form -->
+    <form id="bee-chat-form" onsubmit="handleBeeSubmit(event)" class="bee-chat-input-form">
+      <input type="text" id="bee-input" placeholder="Ask Bee anything about cMPLiBe Scanner..." autocomplete="off" required>
+      <button type="submit" id="btn-bee-send" class="btn-bee-send" title="Send Question">
+        <i class="fa-solid fa-paper-plane"></i>
+      </button>
+    </form>
   </div>
 
   <!-- Toast Notification Container -->

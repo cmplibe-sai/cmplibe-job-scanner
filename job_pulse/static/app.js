@@ -84,13 +84,30 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
       const overlay = document.getElementById("auth-overlay");
       const navUsername = document.getElementById("nav-username");
+      const navRoleBadge = document.getElementById("nav-user-role-badge");
+      const navUserIcon = document.getElementById("nav-user-icon");
 
       if (data.authenticated) {
         currentAuthUser = data.user;
         currentAuthRole = data.role || "member";
         if (overlay) overlay.classList.add("hidden");
         if (navUsername) {
-          navUsername.innerHTML = `${escapeHtml(data.user)} <span style="font-size: 10px; opacity: 0.75; font-weight: normal; text-transform: uppercase;">(${escapeHtml(currentAuthRole)})</span>`;
+          navUsername.innerText = data.user;
+        }
+        if (navRoleBadge) {
+          if (currentAuthRole === "admin") {
+            navRoleBadge.innerText = "👑 Admin";
+            navRoleBadge.style.background = "rgba(14, 165, 233, 0.2)";
+            navRoleBadge.style.color = "#38bdf8";
+            navRoleBadge.style.borderColor = "rgba(14, 165, 233, 0.4)";
+            if (navUserIcon) navUserIcon.className = "fa-solid fa-user-shield text-cyan";
+          } else {
+            navRoleBadge.innerText = "👤 Member";
+            navRoleBadge.style.background = "rgba(16, 185, 129, 0.15)";
+            navRoleBadge.style.color = "#34d399";
+            navRoleBadge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+            if (navUserIcon) navUserIcon.className = "fa-solid fa-user text-green";
+          }
         }
         initApp();
       } else {
@@ -406,27 +423,37 @@ document.addEventListener("DOMContentLoaded", () => {
   checkAuth();
 
   // =================================================================
-  // Main Tab Switcher (Explorer vs Radar vs Discovery vs Sheets vs Settings)
+  // Main Tab Switcher (Explorer vs Radar vs Discovery vs Sheets vs Settings vs Docs)
   // =================================================================
   window.switchMainTab = (tabName) => {
     currentMainTab = tabName;
-    document.getElementById("nav-tab-explorer").classList.toggle("active", tabName === "explorer");
-    document.getElementById("nav-tab-radar").classList.toggle("active", tabName === "radar");
-    document.getElementById("nav-tab-discovery").classList.toggle("active", tabName === "discovery");
-    document.getElementById("nav-tab-sheets").classList.toggle("active", tabName === "sheets");
-    document.getElementById("nav-tab-settings").classList.toggle("active", tabName === "settings");
+    const tabExplorer = document.getElementById("nav-tab-explorer");
+    const tabRadar = document.getElementById("nav-tab-radar");
+    const tabDiscovery = document.getElementById("nav-tab-discovery");
+    const tabSheets = document.getElementById("nav-tab-sheets");
+    const tabSettings = document.getElementById("nav-tab-settings");
+    const tabDocs = document.getElementById("nav-tab-docs");
+
+    if (tabExplorer) tabExplorer.classList.toggle("active", tabName === "explorer");
+    if (tabRadar) tabRadar.classList.toggle("active", tabName === "radar");
+    if (tabDiscovery) tabDiscovery.classList.toggle("active", tabName === "discovery");
+    if (tabSheets) tabSheets.classList.toggle("active", tabName === "sheets");
+    if (tabSettings) tabSettings.classList.toggle("active", tabName === "settings");
+    if (tabDocs) tabDocs.classList.toggle("active", tabName === "docs");
 
     const viewExplorer = document.getElementById("view-explorer");
     const viewRadar = document.getElementById("view-radar");
     const viewDiscovery = document.getElementById("view-discovery");
     const viewSheets = document.getElementById("view-sheets");
     const viewSettings = document.getElementById("view-settings");
+    const viewDocs = document.getElementById("view-docs");
 
     if (viewExplorer) viewExplorer.classList.toggle("hidden", tabName !== "explorer");
     if (viewRadar) viewRadar.classList.toggle("hidden", tabName !== "radar");
     if (viewDiscovery) viewDiscovery.classList.toggle("hidden", tabName !== "discovery");
     if (viewSheets) viewSheets.classList.toggle("hidden", tabName !== "sheets");
     if (viewSettings) viewSettings.classList.toggle("hidden", tabName !== "settings");
+    if (viewDocs) viewDocs.classList.toggle("hidden", tabName !== "docs");
 
     if (tabName === "radar") {
       loadRadarTargets();
@@ -443,6 +470,200 @@ document.addEventListener("DOMContentLoaded", () => {
       loadPosts();
     }
   };
+
+  // =================================================================
+  // Knowledge & Playbook Documentation Center Controllers
+  // =================================================================
+  window.handleDocsSearch = (e) => {
+    const q = (e.target.value || "").toLowerCase().trim();
+    const cards = document.querySelectorAll(".docs-section-card");
+    const faqItems = document.querySelectorAll(".faq-item");
+
+    cards.forEach(card => {
+      if (!q) {
+        card.style.display = "";
+        return;
+      }
+      const text = card.innerText.toLowerCase();
+      card.style.display = text.includes(q) ? "" : "none";
+    });
+
+    faqItems.forEach(item => {
+      if (!q) {
+        item.style.display = "";
+        return;
+      }
+      const text = item.innerText.toLowerCase();
+      item.style.display = text.includes(q) ? "" : "none";
+    });
+  };
+
+  window.filterDocsCategory = (category) => {
+    document.querySelectorAll(".docs-master-card .preset-chips .chip").forEach(c => c.classList.remove("active"));
+    const activeChip = document.getElementById(`chip-docs-${category}`);
+    if (activeChip) activeChip.classList.add("active");
+
+    const cards = document.querySelectorAll(".docs-section-card");
+    cards.forEach(card => {
+      const cat = card.getAttribute("data-category");
+      if (category === "all" || cat === category) {
+        card.style.display = "";
+      } else {
+        card.style.display = "none";
+      }
+    });
+  };
+
+  window.toggleFaq = (faqEl) => {
+    faqEl.classList.toggle("active");
+  };
+
+  // =================================================================
+  // Bee AI Assistant 🐝 Controllers
+  // =================================================================
+  window.toggleBeeChat = () => {
+    const widget = document.getElementById("bee-chat-widget");
+    if (!widget) return;
+    const isHidden = widget.classList.contains("hidden");
+    widget.classList.toggle("hidden", !isHidden);
+    if (isHidden) {
+      setTimeout(() => {
+        const input = document.getElementById("bee-input");
+        if (input) input.focus();
+      }, 100);
+    }
+  };
+
+  window.clearBeeChat = () => {
+    const container = document.getElementById("bee-messages-container");
+    if (!container) return;
+    container.innerHTML = `
+      <div class="bee-message bee-assistant-msg">
+        <div class="bee-msg-avatar">🐝</div>
+        <div class="bee-msg-content">
+          <p style="margin: 0 0 6px 0;">Bzz! Chat cleared! I am <strong>Bee</strong> 🐝, your personal cMPLiBe AI Assistant.</p>
+          <p style="margin: 0; font-size: 12.5px; color: #cbd5e1;">Ask me anything about adding target companies, exploring opportunities across 9+ portals, setting up automated email alerts, or understanding team roles!</p>
+        </div>
+      </div>
+    `;
+  };
+
+  window.sendBeeQuickPrompt = (promptText) => {
+    const input = document.getElementById("bee-input");
+    if (input) {
+      input.value = promptText;
+      window.handleBeeSubmit(null);
+    }
+  };
+
+  window.openBeeWithPrompt = (promptText) => {
+    const widget = document.getElementById("bee-chat-widget");
+    if (widget) widget.classList.remove("hidden");
+    window.sendBeeQuickPrompt(promptText);
+  };
+
+  window.handleBeeSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const input = document.getElementById("bee-input");
+    const container = document.getElementById("bee-messages-container");
+    const btn = document.getElementById("btn-bee-send");
+    if (!input || !container) return;
+
+    const message = input.value.trim();
+    if (!message) return;
+
+    // Append User Message
+    const userMsgEl = document.createElement("div");
+    userMsgEl.className = "bee-message bee-user-msg";
+    userMsgEl.innerHTML = `
+      <div class="bee-msg-content">
+        <p style="margin: 0;">${escapeHtml(message)}</p>
+      </div>
+    `;
+    container.appendChild(userMsgEl);
+    input.value = "";
+    container.scrollTop = container.scrollHeight;
+
+    // Append Typing Indicator
+    const typingEl = document.createElement("div");
+    typingEl.className = "bee-message bee-assistant-msg bee-typing";
+    typingEl.id = "bee-typing-indicator";
+    typingEl.innerHTML = `
+      <div class="bee-msg-avatar">🐝</div>
+      <div class="bee-msg-content">
+        <span class="bee-typing-dots">
+          <span></span><span></span><span></span>
+        </span>
+      </div>
+    `;
+    container.appendChild(typingEl);
+    container.scrollTop = container.scrollHeight;
+
+    if (btn) btn.disabled = true;
+
+    try {
+      const resp = await fetch("api/ai/bee-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+
+      const data = await resp.json();
+      const typingInd = document.getElementById("bee-typing-indicator");
+      if (typingInd) typingInd.remove();
+
+      const replyHtml = formatBeeMarkdown(data.reply || "Bzz! I could not process that request.");
+      const botMsgEl = document.createElement("div");
+      botMsgEl.className = "bee-message bee-assistant-msg";
+      
+      let actionBtnHtml = "";
+      if (data.action && data.action.tab) {
+        actionBtnHtml = `
+          <div style="margin-top: 10px;">
+            <button type="button" class="btn-primary" style="font-size: 11.5px; padding: 5px 12px; border-radius: 6px;" onclick="switchMainTab('${escapeHtml(data.action.tab)}'); toggleBeeChat();">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(data.action.label || 'Open Feature')}
+            </button>
+          </div>
+        `;
+      }
+
+      botMsgEl.innerHTML = `
+        <div class="bee-msg-avatar">🐝</div>
+        <div class="bee-msg-content">
+          ${replyHtml}
+          ${actionBtnHtml}
+        </div>
+      `;
+      container.appendChild(botMsgEl);
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      const typingInd = document.getElementById("bee-typing-indicator");
+      if (typingInd) typingInd.remove();
+
+      const errEl = document.createElement("div");
+      errEl.className = "bee-message bee-assistant-msg";
+      errEl.innerHTML = `
+        <div class="bee-msg-avatar">🐝</div>
+        <div class="bee-msg-content" style="color: #f87171;">
+          <p style="margin: 0;">Bzz! Connection error: Could not reach Bee server. Please ensure you are logged in.</p>
+        </div>
+      `;
+      container.appendChild(errEl);
+    } finally {
+      if (btn) btn.disabled = false;
+      container.scrollTop = container.scrollHeight;
+    }
+  };
+
+  function formatBeeMarkdown(text) {
+    if (!text) return "";
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    html = html.replace(/`(.*?)`/g, "<code style='background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px;'>$1</code>");
+    html = html.replace(/\n/g, "<br>");
+    return html;
+  }
 
   // Search Mode Switcher (By Role vs By Company)
   window.setSearchMode = (mode) => {

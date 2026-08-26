@@ -2,17 +2,30 @@ services:
   - type: web
     name: cmplibe-aiscanner
     env: python
-    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn job_pulse.server:app --host 0.0.0.0 --port $PORT
-    disk:
-      name: aiscanner-data
-      mountPath: /app/data
-      sizeGB: 5
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.3
       - key: DATA_DIR
         value: /app/data
-      - key: ADMIN_PASSWORD
-        generateValue: true
+      - key: SMTP_HOST
+        value: resend
+      - key: SMTP_PORT
+        value: "443"
+      - key: SMTP_USER
+        value: resend
+      - key: SENDER_EMAIL
+        value: cMPLiBe AIScanner <alerts@cmplibe.com>
+      - key: RECIPIENT_EMAIL
+        value: earlitalent@cmplibe.com
+      - key: ALL_INDIA_RECIPIENT_EMAIL
+        value: earlitalent@cmplibe.com
+      - key: RADAR_IS_ENABLED
+        value: "true"
+      - key: ALL_INDIA_RADAR_IS_ENABLED
+        value: "true"
+      - key: SHEETS_IS_ENABLED
+        value: "true"
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        value: 1oMa1z0RilDuXmIKtgmOiY7FzudXVlI9pPKzwwMrU_4g

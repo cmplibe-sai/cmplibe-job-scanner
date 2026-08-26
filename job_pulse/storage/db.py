@@ -37,10 +37,10 @@ logger = logging.getLogger("job_pulse.storage")
 class JobDatabase:
     """SQLite Database manager for job storage, deduplication, hiring posts, company radar, and query filtering."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, init_default_targets: bool = False):
         self.db_path = db_path or DATABASE_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        self._init_db(init_default_targets=init_default_targets)
 
     @contextmanager
     def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
@@ -51,7 +51,7 @@ class JobDatabase:
         finally:
             conn.close()
 
-    def _init_db(self) -> None:
+    def _init_db(self, init_default_targets: bool = False) -> None:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -237,6 +237,22 @@ class JobDatabase:
                     "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     ("admin", p_hash, salt, "admin", 1, get_ist_iso()),
                 )
+
+            # Initialize default watchlist targets if requested and table is empty
+            if init_default_targets:
+                cursor.execute("SELECT COUNT(*) as cnt FROM company_targets")
+                if cursor.fetchone()["cnt"] == 0:
+                    default_targets = [
+                        ("target_jumbotail", "Jumbotail", "https://jumbotail.com/careers", "software, developer, engineer, intern, analyst", json.dumps(["career_page", "linkedin_posts", "portal"])),
+                        ("target_paytm", "Paytm", "https://paytm.com/careers", "software, engineer, developer, operations, executive", json.dumps(["career_page", "linkedin_posts", "portal"])),
+                        ("target_khatabook", "Khatabook", "https://khatabook.com/careers", "engineer, developer, product, intern", json.dumps(["career_page", "linkedin_posts", "portal"])),
+                    ]
+                    now_str = get_ist_iso()
+                    for tid, name, url, kw, ch in default_targets:
+                        cursor.execute(
+                            "INSERT INTO company_targets (id, company_name, career_url, keywords, channels, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                            (tid, name, url, kw, ch, now_str),
+                        )
 
             conn.commit()
 
@@ -753,8 +769,9 @@ class JobDatabase:
 
     def get_sheets_config(self) -> Dict[str, Any]:
         """Fetch Google Sheets integration configuration."""
+        import os
         defaults = {
-            "is_enabled": False,
+            "is_enabled": os.getenv("SHEETS_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "auth_mode": "service_account",
             "credentials_json": DEFAULT_GOOGLE_SHEETS_CREDS_PATH,
             "spreadsheet_id_or_url": DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID,
@@ -817,6 +834,7 @@ class JobDatabase:
 
     def get_email_config(self) -> Dict[str, Any]:
         """Fetch email notification, Target Radar, and All-India Discovery Radar settings."""
+        import os
         defaults = {
             "smtp_host": DEFAULT_SMTP_HOST,
             "smtp_port": DEFAULT_SMTP_PORT,
@@ -825,11 +843,11 @@ class JobDatabase:
             "sender_email": DEFAULT_SENDER_EMAIL,
             # Target Radar Recipient & Settings
             "recipient_email": DEFAULT_RECIPIENT_EMAIL,
-            "is_enabled": False,
+            "is_enabled": os.getenv("RADAR_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "check_interval_minutes": DEFAULT_RADAR_INTERVAL_MINUTES,
             # All-India Discovery Radar Recipient & Settings
             "all_india_recipient": DEFAULT_ALL_INDIA_RECIPIENT_EMAIL or DEFAULT_RECIPIENT_EMAIL,
-            "all_india_is_enabled": False,
+            "all_india_is_enabled": os.getenv("ALL_INDIA_RADAR_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "all_india_interval_minutes": DEFAULT_ALL_INDIA_RADAR_INTERVAL_MINUTES,
             "all_india_keywords": "developer, engineer, manager, recruiter, analyst, intern, fresher, executive, operations, sales",
             "all_india_locations": "India, Bangalore, Mumbai, Delhi, Gurgaon, Noida, Hyderabad, Pune, Chennai, Remote",

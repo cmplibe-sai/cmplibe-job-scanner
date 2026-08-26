@@ -7,8 +7,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.3
-      - key: DATA_DIR
-        value: /app/data
       - key: SMTP_HOST
         value: resend
       - key: SMTP_PORT

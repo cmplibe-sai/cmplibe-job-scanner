@@ -2,8 +2,19 @@ from pathlib import Path
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Safe DATA_DIR determination with non-root Linux permission fallback
+_env_data_dir = os.getenv("DATA_DIR")
+if _env_data_dir:
+    try:
+        DATA_DIR = Path(_env_data_dir)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        DATA_DIR = BASE_DIR / "data"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DATA_DIR = BASE_DIR / "data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASE_PATH = DATA_DIR / "jobpulse.db"
 

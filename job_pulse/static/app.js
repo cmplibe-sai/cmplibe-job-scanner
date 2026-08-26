@@ -39,10 +39,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabBadgePosts = document.getElementById("tab-badge-posts");
 
   // Dynamic Search Metrics Elements
-  const statTotalJobs = document.getElementById("stat-total-jobs");
-  const statTechJobs = document.getElementById("stat-tech-jobs");
-  const statNonTechJobs = document.getElementById("stat-nontech-jobs");
-  const statHiringPosts = document.getElementById("stat-hiring-posts");
+  const explorerStatTotal = document.getElementById("explorer-stat-total");
+  const explorerStatTech = document.getElementById("explorer-stat-tech");
+  const explorerStatNonTech = document.getElementById("explorer-stat-nontech");
+  const explorerStatPosts = document.getElementById("explorer-stat-posts");
+
+  const radarStatCompanies = document.getElementById("radar-stat-companies");
+  const radarStatJobs = document.getElementById("radar-stat-jobs");
+  const radarStatDispatched = document.getElementById("radar-stat-dispatched");
+
+  const discoveryStatTotal = document.getElementById("discovery-stat-total");
+  const discoveryStatTech = document.getElementById("discovery-stat-tech");
+  const discoveryStatNonTech = document.getElementById("discovery-stat-nontech");
+  const discoveryStatDispatched = document.getElementById("discovery-stat-dispatched");
+
   const navTargetCount = document.getElementById("nav-target-count");
 
   // =================================================================
@@ -78,14 +88,46 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentAuthUser = null;
   let currentAuthRole = "member";
 
+  function applyRoleUI() {
+    const isMember = currentAuthRole !== "admin";
+    const roleBadge = document.getElementById("nav-user-role-badge");
+    const userIcon = document.getElementById("nav-user-icon");
+    if (roleBadge) {
+      if (isMember) {
+        roleBadge.innerText = "👤 Member";
+        roleBadge.style.background = "rgba(16, 185, 129, 0.15)";
+        roleBadge.style.color = "#34d399";
+        roleBadge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+        if (userIcon) userIcon.className = "fa-solid fa-user text-green";
+      } else {
+        roleBadge.innerText = "👑 Admin";
+        roleBadge.style.background = "rgba(14, 165, 233, 0.2)";
+        roleBadge.style.color = "#38bdf8";
+        roleBadge.style.borderColor = "rgba(14, 165, 233, 0.4)";
+        if (userIcon) userIcon.className = "fa-solid fa-user-shield text-cyan";
+      }
+    }
+
+    const adminSettingsCard = document.getElementById("admin-settings-card");
+    const memberProfileCard = document.getElementById("member-profile-card");
+    const adminUserCard = document.getElementById("admin-user-management-card");
+    const chipDocsAdmin = document.getElementById("chip-docs-admin");
+
+    if (adminSettingsCard) adminSettingsCard.classList.toggle("hidden", isMember);
+    if (memberProfileCard) memberProfileCard.classList.toggle("hidden", !isMember);
+    if (adminUserCard) {
+      adminUserCard.classList.toggle("hidden", isMember);
+      if (!isMember) loadTeamUsers();
+    }
+    if (chipDocsAdmin) chipDocsAdmin.style.display = isMember ? "none" : "";
+  }
+
   async function checkAuth() {
     try {
       const res = await fetch("api/auth/me");
       const data = await res.json();
       const overlay = document.getElementById("auth-overlay");
       const navUsername = document.getElementById("nav-username");
-      const navRoleBadge = document.getElementById("nav-user-role-badge");
-      const navUserIcon = document.getElementById("nav-user-icon");
 
       if (data.authenticated) {
         currentAuthUser = data.user;
@@ -94,21 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (navUsername) {
           navUsername.innerText = data.user;
         }
-        if (navRoleBadge) {
-          if (currentAuthRole === "admin") {
-            navRoleBadge.innerText = "👑 Admin";
-            navRoleBadge.style.background = "rgba(14, 165, 233, 0.2)";
-            navRoleBadge.style.color = "#38bdf8";
-            navRoleBadge.style.borderColor = "rgba(14, 165, 233, 0.4)";
-            if (navUserIcon) navUserIcon.className = "fa-solid fa-user-shield text-cyan";
-          } else {
-            navRoleBadge.innerText = "👤 Member";
-            navRoleBadge.style.background = "rgba(16, 185, 129, 0.15)";
-            navRoleBadge.style.color = "#34d399";
-            navRoleBadge.style.borderColor = "rgba(16, 185, 129, 0.3)";
-            if (navUserIcon) navUserIcon.className = "fa-solid fa-user text-green";
-          }
-        }
+        applyRoleUI();
         initApp();
       } else {
         currentAuthUser = null;
@@ -1022,15 +1050,111 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Update Dynamic Metrics based on current active search results
   function updateDynamicMetrics() {
-    statTotalJobs.innerText = allJobs.length;
+    if (explorerStatTotal) explorerStatTotal.innerText = allJobs.length;
     
     const techCount = allJobs.filter(j => (j.role_type || "").toLowerCase() === "technical" || (j.category || "").toLowerCase() === "tech").length;
     const nonTechCount = allJobs.length - techCount;
     
-    statTechJobs.innerText = techCount;
-    statNonTechJobs.innerText = Math.max(0, nonTechCount);
-    statHiringPosts.innerText = allPosts.length;
+    if (explorerStatTech) explorerStatTech.innerText = techCount;
+    if (explorerStatNonTech) explorerStatNonTech.innerText = Math.max(0, nonTechCount);
+    if (explorerStatPosts) explorerStatPosts.innerText = allPosts.length;
   }
+
+  // =================================================================
+  // Export & Clipboard Helpers (Excel/CSV & Google Sheets Ready)
+  // =================================================================
+  window.exportFilteredCSV = () => {
+    const activeData = currentView === "jobs" ? allJobs : allPosts;
+    if (!activeData || activeData.length === 0) {
+      showToast("No opportunities in current view to export.", "warning");
+      return;
+    }
+
+    let csvContent = "";
+    if (currentView === "jobs") {
+      const headers = ["Title", "Company", "Location", "Work Mode", "Role Category", "Portal", "Application URL", "Posted / Scraped IST"];
+      const rows = activeData.map(j => [
+        `"${(j.title || '').replace(/"/g, '""')}"`,
+        `"${(j.company || '').replace(/"/g, '""')}"`,
+        `"${(j.location || '').replace(/"/g, '""')}"`,
+        `"${(j.work_mode || '').replace(/"/g, '""')}"`,
+        `"${(j.role_category || 'non_technical').replace(/"/g, '""')}"`,
+        `"${(j.source_portal || '').replace(/"/g, '""')}"`,
+        `"${(j.url || '').replace(/"/g, '""')}"`,
+        `"${(j.scraped_at || j.posted_date || '').replace(/"/g, '""')}"`,
+      ].join(","));
+      csvContent = [headers.join(","), ...rows].join("\r\n");
+    } else {
+      const headers = ["Role Title", "Company", "Poster Name", "Location", "Post URL", "Post Content"];
+      const rows = activeData.map(p => [
+        `"${(p.role_title || '').replace(/"/g, '""')}"`,
+        `"${(p.company || '').replace(/"/g, '""')}"`,
+        `"${(p.poster_name || '').replace(/"/g, '""')}"`,
+        `"${(p.location || '').replace(/"/g, '""')}"`,
+        `"${(p.post_url || '').replace(/"/g, '""')}"`,
+        `"${(p.post_text || '').replace(/"/g, '""')}"`,
+      ].join(","));
+      csvContent = [headers.join(","), ...rows].join("\r\n");
+    }
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `cmplibe_opportunities_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`📥 Exported ${activeData.length} opportunities as Excel/CSV!`, "success");
+  };
+
+  window.copyJobsForGoogleSheets = async () => {
+    const activeData = currentView === "jobs" ? allJobs : allPosts;
+    if (!activeData || activeData.length === 0) {
+      showToast("No opportunities in current view to copy.", "warning");
+      return;
+    }
+
+    let tsvContent = "";
+    if (currentView === "jobs") {
+      const headers = ["Title", "Company", "Location", "Work Mode", "Role Category", "Portal", "Application URL", "Scraped Date (IST)"];
+      const rows = activeData.map(j => [
+        j.title || "",
+        j.company || "",
+        j.location || "",
+        j.work_mode || "",
+        j.role_category || "non_technical",
+        j.source_portal || "",
+        j.url || "",
+        formatISTDate(j.scraped_at || j.posted_date || ""),
+      ].join("\t"));
+      tsvContent = [headers.join("\t"), ...rows].join("\r\n");
+    } else {
+      const headers = ["Role Title", "Company", "Poster Name", "Location", "Post URL", "Post Content"];
+      const rows = activeData.map(p => [
+        p.role_title || "",
+        p.company || "",
+        p.poster_name || "",
+        p.location || "",
+        p.post_url || "",
+        (p.post_text || "").replace(/\n/g, " "),
+      ].join("\t"));
+      tsvContent = [headers.join("\t"), ...rows].join("\r\n");
+    }
+
+    try {
+      await navigator.clipboard.writeText(tsvContent);
+      showToast(`📋 Copied ${activeData.length} rows! Open Google Sheet & press Ctrl+V to paste.`, "success");
+    } catch (err) {
+      const textarea = document.createElement("textarea");
+      textarea.value = tsvContent;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      showToast(`📋 Copied ${activeData.length} rows! Ready to paste (Ctrl+V) in Google Sheets.`, "success");
+    }
+  };
 
   // Render Job Cards
   function renderJobs(jobs) {
@@ -1208,6 +1332,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const countEl = document.getElementById("radar-watchlist-count");
       if (countEl) countEl.innerText = targets.length;
 
+      if (radarStatCompanies) radarStatCompanies.innerText = targets.length;
+      let totalFound = 0;
+      targets.forEach(t => { totalFound += (t.last_found_count || 0); });
+      if (radarStatJobs) radarStatJobs.innerText = totalFound;
+
       const grid = document.getElementById("radar-targets-grid");
       if (!grid) return;
 
@@ -1303,18 +1432,72 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   window.triggerRadarScan = async (targetId) => {
+    const banner = document.getElementById("radar-live-progress-banner");
+    const titleEl = document.getElementById("radar-progress-title");
+    const subEl = document.getElementById("radar-progress-subtitle");
+    const badgeEl = document.getElementById("radar-progress-status-badge");
+    const spinnerIcon = document.getElementById("radar-spinner-icon");
+    const btnAll = document.getElementById("btn-run-radar-all");
+
+    if (banner) {
+      banner.classList.remove("hidden");
+      if (titleEl) titleEl.innerText = "Scanning Watched Target Companies...";
+      if (subEl) subEl.innerText = "Crawling Career ATS pages, LinkedIn, Internshala, Unstop, Shine, and Recruiter feeds in parallel...";
+      if (badgeEl) {
+        badgeEl.innerText = "Scanning Active";
+        badgeEl.style.background = "rgba(99, 102, 241, 0.2)";
+        badgeEl.style.color = "#818cf8";
+      }
+      if (spinnerIcon) spinnerIcon.className = "fa-solid fa-spinner fa-spin text-cyan";
+    }
+    if (btnAll) {
+      btnAll.disabled = true;
+      btnAll.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning Target Watchlist...';
+    }
+
     try {
       showToast("Initiating Radar Scan...", "success");
       const resp = await fetch(`api/radar/scan?target_id=${targetId || ''}`, { method: "POST" });
-      if (!resp.ok) throw new Error("Failed to initiate scan");
-      showToast("Radar Scan started in background! Check logs shortly.", "success");
+      const data = await resp.json();
+      
+      if (titleEl) titleEl.innerText = "Syncing with Google Sheets & Dispatching Email Alerts...";
+      if (subEl) subEl.innerText = "Writing delta opportunities to Google Sheets & queuing email alerts...";
+
       setTimeout(() => {
+        if (titleEl) titleEl.innerText = "Scan Completed Successfully!";
+        if (subEl) subEl.innerText = data.message || "All target opportunities updated and synced!";
+        if (badgeEl) {
+          badgeEl.innerText = "Completed ✅";
+          badgeEl.style.background = "rgba(16, 185, 129, 0.2)";
+          badgeEl.style.color = "#34d399";
+        }
+        if (spinnerIcon) spinnerIcon.className = "fa-solid fa-circle-check text-green";
+
         loadRadarTargets();
         loadRadarLogs();
         loadJobs();
-      }, 4000);
+        loadSheetsSettings();
+        showToast(data.message || "Radar Scan completed successfully!", "success");
+
+        setTimeout(() => {
+          if (banner) banner.classList.add("hidden");
+        }, 8000);
+      }, 2500);
+
     } catch (err) {
       showToast(err.message, "error");
+      if (titleEl) titleEl.innerText = "Scan Encountered an Issue";
+      if (subEl) subEl.innerText = err.message;
+      if (badgeEl) {
+        badgeEl.innerText = "Failed";
+        badgeEl.style.background = "rgba(239, 68, 68, 0.2)";
+        badgeEl.style.color = "#f87171";
+      }
+    } finally {
+      if (btnAll) {
+        btnAll.disabled = false;
+        btnAll.innerHTML = '<i class="fa-solid fa-radar fa-spin-pulse"></i> Run Company Radar Scan Now';
+      }
     }
   };
 
@@ -1348,6 +1531,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const resp = await fetch("api/radar/logs?limit=50");
       const data = await resp.json();
       const logs = data.logs || [];
+      
+      if (radarStatDispatched) radarStatDispatched.innerText = logs.length;
+      
       const tbody = document.getElementById("radar-logs-tbody");
       if (!tbody) return;
 
@@ -1376,19 +1562,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =================================================================
-  // SETTINGS & SMTP EMAIL CONTROLLERS
-  // =================================================================
-  // =================================================================
   // ALL-INDIA DISCOVERY RADAR CONTROLLERS
   // =================================================================
   async function loadDiscoveryLogs() {
     try {
-      const resp = await fetch("api/radar/discovery/logs?limit=50");
+      const resp = await fetch("api/radar/discovery/logs?limit=100");
       const data = await resp.json();
       const logs = data.logs || [];
 
       const countEl = document.getElementById("discovery-alerts-count");
       if (countEl) countEl.innerText = logs.length;
+
+      if (discoveryStatTotal) discoveryStatTotal.innerText = logs.length;
+      const techCount = logs.filter(l => (l.role_type || '').toLowerCase() === 'technical').length;
+      if (discoveryStatTech) discoveryStatTech.innerText = techCount;
+      if (discoveryStatNonTech) discoveryStatNonTech.innerText = Math.max(0, logs.length - techCount);
+      if (discoveryStatDispatched) discoveryStatDispatched.innerText = logs.length;
 
       const tbody = document.getElementById("discovery-logs-tbody");
       if (!tbody) return;
@@ -1419,6 +1608,24 @@ document.addEventListener("DOMContentLoaded", () => {
   window.handleTriggerDiscoveryScan = async (e) => {
     if (e) e.preventDefault();
     const btn = document.getElementById("btn-trigger-discovery");
+    const banner = document.getElementById("discovery-live-progress-banner");
+    const titleEl = document.getElementById("discovery-progress-title");
+    const subEl = document.getElementById("discovery-progress-subtitle");
+    const badgeEl = document.getElementById("discovery-progress-status-badge");
+    const spinnerIcon = document.getElementById("discovery-spinner-icon");
+
+    if (banner) {
+      banner.classList.remove("hidden");
+      if (titleEl) titleEl.innerText = "Scanning Portals Across India in Real-Time...";
+      if (subEl) subEl.innerText = "Scraping LinkedIn, Naukri, Internshala, Unstop, Shine & Foundit...";
+      if (badgeEl) {
+        badgeEl.innerText = "Scanning Portals";
+        badgeEl.style.background = "rgba(249, 115, 22, 0.2)";
+        badgeEl.style.color = "#fb923c";
+      }
+      if (spinnerIcon) spinnerIcon.className = "fa-solid fa-spinner fa-spin text-orange";
+    }
+
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning Portals Across India...';
@@ -1440,14 +1647,40 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify(payload),
       });
       const data = await resp.json();
-      showToast(data.message || "All-India scan initiated!", "success");
+      
+      if (titleEl) titleEl.innerText = "Syncing with Google Sheets & Dispatching Alerts...";
+      if (subEl) subEl.innerText = "Adding new opportunities to Google Sheets & dispatching email digest...";
+
       setTimeout(() => {
+        if (titleEl) titleEl.innerText = "All-India Scan Complete!";
+        if (subEl) subEl.innerText = data.message || "Opportunities synced to Google Sheets & Dispatched to email!";
+        if (badgeEl) {
+          badgeEl.innerText = "Completed ✅";
+          badgeEl.style.background = "rgba(16, 185, 129, 0.2)";
+          badgeEl.style.color = "#34d399";
+        }
+        if (spinnerIcon) spinnerIcon.className = "fa-solid fa-circle-check text-green";
+
         loadDiscoveryLogs();
         loadJobs();
         loadPosts();
-      }, 5000);
+        loadSheetsSettings();
+        showToast(data.message || "All-India scan completed successfully!", "success");
+
+        setTimeout(() => {
+          if (banner) banner.classList.add("hidden");
+        }, 8000);
+      }, 2500);
+
     } catch (err) {
       showToast(err.message, "error");
+      if (titleEl) titleEl.innerText = "Scan Failed";
+      if (subEl) subEl.innerText = err.message;
+      if (badgeEl) {
+        badgeEl.innerText = "Failed";
+        badgeEl.style.background = "rgba(239, 68, 68, 0.2)";
+        badgeEl.style.color = "#f87171";
+      }
     } finally {
       if (btn) {
         btn.disabled = false;

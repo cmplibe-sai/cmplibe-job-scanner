@@ -98,44 +98,44 @@
           <i class="fa-solid fa-book-open"></i> Guide & Playbook 📖
         </button>
       </nav>
+    </header>
 
-      <!-- Dynamic Live Search Metrics Overview -->
-      <div class="header-metrics">
+    <!-- ================================================================= -->
+    <!-- VIEW 1: OPPORTUNITY EXPLORER                                      -->
+    <!-- ================================================================= -->
+    <main id="view-explorer" class="main-grid" style="grid-template-columns: 360px 1fr;">
+      <!-- Opportunity Explorer Contextual Live Metrics -->
+      <div class="header-metrics tab-metrics-bar" style="grid-column: 1 / -1; margin-bottom: 8px;">
         <div class="metric-card">
-          <i class="fa-solid fa-briefcase"></i>
+          <i class="fa-solid fa-briefcase text-cyan"></i>
           <div>
-            <span class="metric-value" id="stat-total-jobs">0</span>
-            <span class="metric-label">Positions Stored</span>
+            <span class="metric-value" id="explorer-stat-total">0</span>
+            <span class="metric-label">Discovered Positions</span>
           </div>
         </div>
         <div class="metric-card">
           <i class="fa-solid fa-laptop-code text-cyan"></i>
           <div>
-            <span class="metric-value" id="stat-tech-jobs">0</span>
+            <span class="metric-value" id="explorer-stat-tech">0</span>
             <span class="metric-label">Technical Roles</span>
           </div>
         </div>
         <div class="metric-card">
           <i class="fa-solid fa-user-tie text-purple"></i>
           <div>
-            <span class="metric-value" id="stat-nontech-jobs">0</span>
+            <span class="metric-value" id="explorer-stat-nontech">0</span>
             <span class="metric-label">Non-Technical Roles</span>
           </div>
         </div>
         <div class="metric-card">
           <i class="fa-solid fa-bullhorn text-pink"></i>
           <div>
-            <span class="metric-value" id="stat-hiring-posts">0</span>
+            <span class="metric-value" id="explorer-stat-posts">0</span>
             <span class="metric-label">HR / Recruiter Posts</span>
           </div>
         </div>
       </div>
-    </header>
 
-    <!-- ================================================================= -->
-    <!-- VIEW 1: OPPORTUNITY EXPLORER                                      -->
-    <!-- ================================================================= -->
-    <main id="view-explorer" class="main-grid">
       <!-- Left Sidebar: Unified Filters & Scraper Controls -->
       <aside class="sidebar-panel">
         <div class="glass-card scraper-control-card">
@@ -323,13 +323,19 @@
             </button>
           </div>
 
-          <div class="action-buttons-wrap">
+          <div class="action-buttons-wrap" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn-secondary" onclick="exportFilteredCSV()" style="font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-file-csv text-green"></i> Download Excel / CSV
+            </button>
+            <button type="button" class="btn-primary" onclick="copyJobsForGoogleSheets()" style="font-size: 12px; padding: 6px 12px; background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981; display: inline-flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-clipboard-check"></i> Copy for Google Sheets
+            </button>
             <button id="btn-refresh" class="btn-icon" title="Refresh Listings"><i class="fa-solid fa-rotate-right"></i></button>
 
             <!-- Click-to-Toggle Export Menu -->
             <div class="export-dropdown" id="export-dropdown-wrap">
-              <button type="button" class="btn-outline export-trigger-btn" id="btn-export-trigger" onclick="toggleExportMenu(event)">
-                <i class="fa-solid fa-download"></i> Export Filtered <i class="fa-solid fa-chevron-down"></i>
+              <button type="button" class="btn-outline export-trigger-btn" id="btn-export-trigger" onclick="toggleExportMenu(event)" style="font-size: 12px; padding: 6px 12px;">
+                <i class="fa-solid fa-download"></i> More Exports <i class="fa-solid fa-chevron-down"></i>
               </button>
               <div class="export-menu" id="export-menu">
                 <a href="javascript:void(0)" onclick="downloadExport('csv')"><i class="fa-solid fa-file-csv text-green"></i> CSV Spreadsheet</a>
@@ -379,6 +385,54 @@
     <!-- VIEW 2: TARGET COMPANY RADAR & NOTIFICATIONS                      -->
     <!-- ================================================================= -->
     <main id="view-radar" class="radar-container hidden">
+      <!-- Target Radar Contextual Live Metrics -->
+      <div class="header-metrics tab-metrics-bar" style="margin-bottom: 16px;">
+        <div class="metric-card">
+          <i class="fa-solid fa-crosshairs text-primary"></i>
+          <div>
+            <span class="metric-value" id="radar-stat-companies">0</span>
+            <span class="metric-label">Watched Companies</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-briefcase text-cyan"></i>
+          <div>
+            <span class="metric-value" id="radar-stat-jobs">0</span>
+            <span class="metric-label">Opportunities Sourced</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-paper-plane text-purple"></i>
+          <div>
+            <span class="metric-value" id="radar-stat-dispatched">0</span>
+            <span class="metric-label">Radar Alerts Dispatched</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-satellite text-green"></i>
+          <div>
+            <span class="metric-value" id="radar-stat-channels">6</span>
+            <span class="metric-label">Active Sourcing Channels</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Scan Real-time Progress Status Banner (Shown during scan) -->
+      <div id="radar-live-progress-banner" class="glass-card hidden" style="margin-bottom: 16px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.4); padding: 14px 18px; border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="fa-solid fa-spinner fa-spin text-cyan" style="font-size: 20px;" id="radar-spinner-icon"></i>
+            <div>
+              <h4 id="radar-progress-title" style="margin: 0; font-size: 14px; color: #f8fafc;">Scanning Target Companies...</h4>
+              <p id="radar-progress-subtitle" style="margin: 3px 0 0 0; font-size: 12px; color: #94a3b8;">Scraping career ATS portals, LinkedIn, Internshala, Unstop, Shine, and Recruiter feeds...</p>
+            </div>
+          </div>
+          <span class="badge" id="radar-progress-status-badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4);">
+            In Progress
+          </span>
+        </div>
+      </div>
+
       <!-- Radar Overview Banner -->
       <div class="radar-header-banner glass-card">
         <div class="radar-banner-info">
@@ -485,7 +539,55 @@
     <!-- ================================================================= -->
     <!-- VIEW 3: ALL-INDIA MULTI-PORTAL JOB RADAR                          -->
     <!-- ================================================================= -->
-    <main id="view-discovery" class="main-grid hidden">
+    <main id="view-discovery" class="main-grid hidden" style="grid-template-columns: 360px 1fr;">
+      <!-- All-India Radar Contextual Live Metrics -->
+      <div class="header-metrics tab-metrics-bar" style="grid-column: 1 / -1; margin-bottom: 8px;">
+        <div class="metric-card">
+          <i class="fa-solid fa-earth-asia text-primary"></i>
+          <div>
+            <span class="metric-value" id="discovery-stat-total">0</span>
+            <span class="metric-label">All-India Sourced Positions</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-laptop-code text-cyan"></i>
+          <div>
+            <span class="metric-value" id="discovery-stat-tech">0</span>
+            <span class="metric-label">Technical Roles</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-user-tie text-purple"></i>
+          <div>
+            <span class="metric-value" id="discovery-stat-nontech">0</span>
+            <span class="metric-label">Non-Technical Roles</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <i class="fa-solid fa-bell-concierge text-yellow"></i>
+          <div>
+            <span class="metric-value" id="discovery-stat-dispatched">0</span>
+            <span class="metric-label">Total Dispatched Alerts</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Scan Real-time Progress Status Banner (Shown during scan) -->
+      <div id="discovery-live-progress-banner" class="glass-card hidden" style="grid-column: 1 / -1; margin-bottom: 12px; background: rgba(249, 115, 22, 0.08); border: 1px solid rgba(249, 115, 22, 0.4); padding: 14px 18px; border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="fa-solid fa-spinner fa-spin text-orange" style="font-size: 20px;" id="discovery-spinner-icon"></i>
+            <div>
+              <h4 id="discovery-progress-title" style="margin: 0; font-size: 14px; color: #f8fafc;">Scanning Portals Across India...</h4>
+              <p id="discovery-progress-subtitle" style="margin: 3px 0 0 0; font-size: 12px; color: #94a3b8;">Scraping LinkedIn, Naukri, Internshala, Unstop, Shine & Foundit in real-time...</p>
+            </div>
+          </div>
+          <span class="badge" id="discovery-progress-status-badge" style="background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.4);">
+            Scanning Portals
+          </span>
+        </div>
+      </div>
+
       <!-- Left: Discovery Trigger Controls -->
       <aside class="sidebar-panel">
         <div class="glass-card scraper-control-card">
@@ -775,10 +877,26 @@
     <!-- VIEW 5: DUAL EMAIL & SYSTEM SETTINGS                              -->
     <!-- ================================================================= -->
     <main id="view-settings" class="settings-container hidden">
-      <div class="glass-card settings-card">
+      <!-- Team Member Profile Banner (Shown to Members) -->
+      <div id="member-profile-card" class="glass-card hidden" style="margin-bottom: 24px; border-left: 4px solid #10b981;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+            👤
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 16px; color: #f8fafc;">Team Sourcing Member Portal</h3>
+            <p style="margin: 3px 0 0 0; font-size: 13px; color: #94a3b8;">
+              You are signed in as an active team sourcing member. You have full access to search all portals in <strong>Opportunity Explorer</strong> and add/manage watched companies in <strong>Target Company Radar</strong>. Background email gateways and cloud connections are managed 24/7 by Administrator.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Dual Radar Alerts & SMTP Settings (Admin Only) -->
+      <div id="admin-settings-card" class="glass-card settings-card" data-role="admin-only">
         <div class="card-header">
           <h2><i class="fa-solid fa-envelope-circle-check text-primary"></i> Dual Radar Alerts & SMTP Configuration</h2>
-          <span class="badge live-badge"><i class="fa-solid fa-shield-halved"></i> Secure Local Storage</span>
+          <span class="badge live-badge"><i class="fa-solid fa-shield-halved"></i> Admin Control</span>
         </div>
         <p class="card-desc">
           Configure two separate email alert channels: one dedicated to your watched target companies, and one for broad All-India multi-portal job discoveries.
@@ -1160,17 +1278,17 @@
             <!-- FAQ 1 -->
             <div class="faq-item" onclick="toggleFaq(this)">
               <div class="faq-question">
-                <span><i class="fa-solid fa-angle-right faq-icon"></i> How do I add a company that is not currently in the watchlist?</span>
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> How do I add and monitor a new company in Target Radar?</span>
                 <span class="badge" style="background: rgba(14,165,233,0.15); color: #38bdf8;">Target Radar</span>
               </div>
               <div class="faq-answer">
-                <p>To add any company to the Radar:</p>
+                <p>To add any company to the automated Radar watchlist:</p>
                 <ol style="margin: 6px 0; padding-left: 20px;">
-                  <li>Click the <strong>Target Company Radar</strong> tab.</li>
-                  <li>Click the green <strong>'+ Add Target Company'</strong> button.</li>
-                  <li>Enter the Company Name (e.g. <em>Stripe, PhonePe, Khatabook</em>) and their career page URL.</li>
-                  <li>Enter role keywords to filter (e.g. <em>developer, product manager, intern</em>).</li>
-                  <li>Click <strong>Save & Start Tracking</strong>. The system will scan them automatically on every radar cycle!</li>
+                  <li>Open the <strong>Target Company Radar</strong> tab.</li>
+                  <li>In the <em>Add Target Company</em> form on the left, enter the <strong>Company Name</strong> (e.g. <em>Amazon, Swiggy, Paytm, Khatabook</em>).</li>
+                  <li>Paste their official <strong>Career Page / ATS link</strong> (Greenhouse, Lever, Workday, Amazon.jobs, etc.).</li>
+                  <li>Optionally specify role keywords (e.g. <em>developer, product manager, intern</em>) or leave empty for ALL roles.</li>
+                  <li>Click <strong>'+ Add to Watchlist'</strong> — the system will immediately start monitoring this company 24/7!</li>
                 </ol>
               </div>
             </div>
@@ -1178,36 +1296,56 @@
             <!-- FAQ 2 -->
             <div class="faq-item" onclick="toggleFaq(this)">
               <div class="faq-question">
-                <span><i class="fa-solid fa-angle-right faq-icon"></i> What is the difference between Radar 1 and Radar 2?</span>
-                <span class="badge" style="background: rgba(139,92,246,0.15); color: #c084fc;">Alert Channels</span>
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> How do I export or copy sourced opportunities into my Google Sheet?</span>
+                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399;">Export & Sync</span>
               </div>
               <div class="faq-answer">
-                <p><strong>Radar 1 (Target Company Watchlist)</strong>: Monitored specifically for your watched companies (e.g. <em>Jumbotail, Paytm, Swiggy</em>) across their direct ATS/Career pages and recruiter posts. Sent to your Target Recipient email.</p>
-                <p><strong>Radar 2 (All-India Multi-Portal Discovery)</strong>: Broad nationwide scan across 9+ job portals for high-demand tech & non-tech roles across major metro hubs. Sent to your All-India Recipient email.</p>
+                <p>You have two instant options in <strong>Opportunity Explorer</strong>:</p>
+                <ul>
+                  <li><strong>Copy for Google Sheets</strong>: Click the green <code>📋 Copy for Google Sheets</code> button. Open your Google Sheet, click on any empty cell, and press <code>Ctrl + V</code> (or <code>Cmd + V</code>). All columns (Title, Company, Location, Work Mode, URL, Sourced IST) will paste formatted automatically!</li>
+                  <li><strong>Download Excel / CSV</strong>: Click <code>📥 Download Excel / CSV</code> to download a complete spreadsheet file on your computer.</li>
+                  <li><strong>Automatic Live Sync</strong>: In the <em>Google Sheet Live Sync</em> tab, all newly discovered jobs are automatically logged into your configured cloud Google Spreadsheet.</li>
+                </ul>
               </div>
             </div>
 
             <!-- FAQ 3 -->
             <div class="faq-item" onclick="toggleFaq(this)">
               <div class="faq-question">
-                <span><i class="fa-solid fa-angle-right faq-icon"></i> What can regular Team Members do vs Administrators?</span>
-                <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399;">Role Access</span>
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> How do I filter between Technical and Non-Technical roles?</span>
+                <span class="badge" style="background: rgba(139,92,246,0.15); color: #c084fc;">Role Filters</span>
               </div>
               <div class="faq-answer">
-                <p><strong>Team Members</strong> can search opportunities, filter roles, add and manage target companies, trigger immediate scans, and view Google Sheet updates. Sensitive backend SMTP passwords and Google service account keys are safely hidden from members.</p>
-                <p><strong>Administrators</strong> have complete access to configure outgoing mail servers, Google Sheet service credentials, and create/deactivate team accounts.</p>
+                <p>In <strong>Opportunity Explorer</strong> and <strong>All-India Job Radar</strong>, use the <strong>Role Category</strong> dropdown:</p>
+                <ul>
+                  <li><strong>💻 Technical Only</strong>: Filters for Software Engineers, Frontend, Backend, Fullstack, DevOps, Data Science, AI/ML, and QA roles.</li>
+                  <li><strong>👔 Non-Technical Only</strong>: Filters for Category Managers, Sales & Business Development, HR & Talent Acquisition, Marketing, Finance, Operations, and Customer Success.</li>
+                  <li><strong>All Role Types</strong>: Displays all available positions across both domains.</li>
+                </ul>
               </div>
             </div>
 
             <!-- FAQ 4 -->
             <div class="faq-item" onclick="toggleFaq(this)">
               <div class="faq-question">
-                <span><i class="fa-solid fa-angle-right faq-icon"></i> Why did the website disconnect on Render and how does Hostinger solve this?</span>
-                <span class="badge" style="background: rgba(245,158,11,0.15); color: #fbbf24;">24/7 Hosting</span>
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> What is the difference between Opportunity Explorer, Target Radar, and All-India Radar?</span>
+                <span class="badge" style="background: rgba(249,115,22,0.15); color: #fb923c;">Product Features</span>
               </div>
               <div class="faq-answer">
-                <p>Render Free Tier puts inactive web services into "Cold Sleep" after 15 minutes. When it wakes up, it starts a fresh temporary container that resets in-memory data and stops background scanning while asleep.</p>
-                <p>On <strong>Hostinger (VPS or Python Hosting)</strong>, the application runs 24/7 continuously with permanent SSD storage. The SQLite database is never erased, and background email alerts run nonstop 24 hours a day!</p>
+                <p><strong>1. Opportunity Explorer</strong>: On-demand real-time search engine. Enter any keyword, role, location, or company to instantly scrape 9+ job portals and download results.</p>
+                <p><strong>2. Target Company Radar</strong>: Dedicated company watchlist. Scrapes ATS career pages and recruiter feeds for your specific target firms (e.g. Swiggy, Amazon, Khatabook) and sends email alerts whenever new openings appear.</p>
+                <p><strong>3. All-India Job Radar 🇮🇳</strong>: 24/7 automated nationwide discovery engine scanning fresh openings across major tech and business hubs in India.</p>
+              </div>
+            </div>
+
+            <!-- FAQ 5 -->
+            <div class="faq-item" onclick="toggleFaq(this)">
+              <div class="faq-question">
+                <span><i class="fa-solid fa-angle-right faq-icon"></i> How to find direct LinkedIn HR & Recruiter hiring posts?</span>
+                <span class="badge" style="background: rgba(236,72,153,0.15); color: #f472b6;">Recruiter Sourcing</span>
+              </div>
+              <div class="faq-answer">
+                <p>In <strong>Opportunity Explorer</strong>, click the <strong>'Recruiter & HR Posts'</strong> view tab at the top of the listings table. This displays direct LinkedIn posts made by hiring managers and talent recruiters (with poster names, contact details, and role descriptions) so you can reach out directly!</p>
               </div>
             </div>
           </div>

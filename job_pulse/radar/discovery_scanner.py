@@ -144,8 +144,7 @@ class AllIndiaDiscoveryScanner:
                     synced_posts_count = cnt_p
 
                     total_synced = cnt_j + cnt_p
-                    if total_synced > 0:
-                        self.db.update_sheets_sync_stats(total_synced)
+                    self.db.update_sheets_sync_stats(total_synced)
                     sheets_status = f"Synced {cnt_j} job(s) and {cnt_p} post(s) to Google Sheets."
                 except Exception as e:
                     sheets_status = f"Google Sheets sync error: {e}"

@@ -68,7 +68,9 @@ class CareerPageScraper(BaseScraper):
         """Auto-detect ATS or fall back to verified generic career crawler."""
         url_lower = url.lower()
 
-        if "greenhouse.io" in url_lower:
+        if "amazon.jobs" in url_lower:
+            return self._scrape_amazon(url, keyword_filter, company_override)
+        elif "greenhouse.io" in url_lower:
             return self._scrape_greenhouse(url, keyword_filter, company_override)
         elif "lever.co" in url_lower:
             return self._scrape_lever(url, keyword_filter, company_override)
@@ -80,6 +82,41 @@ class CareerPageScraper(BaseScraper):
             return self._scrape_workday(url, keyword_filter, company_override)
         else:
             return self._scrape_generic_page(url, keyword_filter, company_override)
+
+    def _scrape_amazon(self, url: str, keyword_filter: str = "", company_override: str = "") -> List[JobPost]:
+        """Scrape Amazon.jobs search API directly."""
+        jobs: list[JobPost] = []
+        company = company_override or "Amazon"
+        base_query = keyword_filter or "software"
+        api_url = f"https://www.amazon.jobs/en/search.json?base_query={base_query}&loc_query=India&result_limit=50"
+        resp = self.client.get(api_url)
+        if resp and resp.status_code == 200:
+            try:
+                data = resp.json()
+                for item in data.get("jobs", []):
+                    title = item.get("title", "").strip()
+                    if not self._is_valid_job_title(title, url):
+                        continue
+                    loc = item.get("normalized_location") or item.get("location") or "India"
+                    job_path = item.get("job_path", "")
+                    job_url = f"https://www.amazon.jobs{job_path}" if job_path else url
+                    jobs.append(
+                        JobPost(
+                            title=title,
+                            company=company,
+                            location=loc,
+                            work_mode=self.detect_work_mode(f"{title} {loc}"),
+                            url=job_url,
+                            source_portal=f"Amazon Jobs",
+                            posted_date=item.get("posted_date"),
+                        )
+                    )
+                if jobs:
+                    return jobs
+            except Exception as e:
+                logger.warning(f"Amazon JSON API parse error: {e}")
+
+        return self._scrape_generic_page(url, keyword_filter, company_override)
 
     def _scrape_greenhouse(self, url: str, keyword_filter: str = "", company_override: str = "") -> List[JobPost]:
         """Scrape Greenhouse public board API."""

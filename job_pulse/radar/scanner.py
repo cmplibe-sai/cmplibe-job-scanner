@@ -256,8 +256,7 @@ class CompanyRadarScanner:
                     config=sheets_config,
                     sheet_name=sheets_config.get("sheet_name_hiring_posts", "Recruiter Posts"),
                 )
-                if (cnt_j + cnt_p) > 0:
-                    self.db.update_sheets_sync_stats(cnt_j + cnt_p)
+                self.db.update_sheets_sync_stats(cnt_j + cnt_p)
             except Exception as e:
                 logger.warning(f"Target company Google Sheets sync error: {e}")
 

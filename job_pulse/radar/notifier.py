@@ -353,6 +353,121 @@ class RadarEmailNotifier:
         total_items = len(valid_jobs) + len(valid_posts)
 
         subject = f"🎯 Radar Alert: {total_items} New Opportunities at {company_name}"
+
+        from job_pulse.utils.time_utils import get_ist_display
+        now_ist = get_ist_display()
+
+        # Build Job Cards HTML
+        jobs_html = ""
+        for idx, job in enumerate(valid_jobs[:35], start=1):
+            title = job.get("title") or "Position"
+            company = job.get("company") or company_name
+            portal = job.get("source_portal") or "Career Page"
+            loc_mode_text = cls._format_location_and_mode(job)
+            exp_badge = job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")
+            sal_text = job.get("salary_text")
+            role_type = "💻 Technical" if str(job.get("role_type", "")).lower() in ["technical", "roletype.technical"] else "👔 Non-Technical"
+            url = job.get("url") or "#"
+
+            sal_badge = f'<span style="display: inline-block; background: #1e293b; color: #fbbf24; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">💰 {sal_text}</span>' if sal_text and sal_text != "Not Disclosed" else ''
+
+            jobs_html += f"""
+            <div style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; font-weight: 700; font-size: 11px; padding: 2px 6px; border-radius: 4px;">#{idx}</span>
+                <span style="font-size: 11.5px; color: #94a3b8;">{portal}</span>
+              </div>
+              <div style="margin-bottom: 6px;">
+                <h3 style="margin: 0; font-size: 15px; color: #38bdf8;">
+                  <a href="{url}" style="color: #38bdf8; text-decoration: none; font-weight: 600;">{title}</a>
+                </h3>
+              </div>
+              <div style="font-size: 13px; color: #f8fafc; font-weight: 600; margin-bottom: 6px;">
+                🏢 {company}
+              </div>
+              <div style="margin: 8px 0; font-size: 12px; line-height: 1.9;">
+                <span style="display: inline-block; background: #1e293b; color: #a855f7; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">{role_type}</span>
+                <span style="display: inline-block; background: #1e293b; color: #34d399; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">💼 {exp_badge}</span>
+                {sal_badge}
+                <span style="display: inline-block; background: #1e293b; color: #f472b6; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">{loc_mode_text}</span>
+              </div>
+              <div style="margin-top: 10px;">
+                <a href="{url}" style="display: inline-block; background: #0284c7; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none;">
+                  Apply Directly →
+                </a>
+              </div>
+            </div>
+            """
+
+        # Build Recruiter Posts HTML
+        posts_html = ""
+        for post in valid_posts[:15]:
+            poster = post.get("poster_name") or "HR / Recruiter"
+            comp = post.get("company") or company_name
+            role = post.get("role_title") or "Hiring Opportunity"
+            snippet = (post.get("post_text") or "")[:240] + ("..." if len(post.get("post_text") or "") > 240 else "")
+            post_url = post.get("post_url") or "#"
+            contact = post.get("contact_email") or post.get("contact_phone") or "Direct on LinkedIn"
+
+            posts_html += f"""
+            <div style="background: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid #0ea5e9;">
+              <div style="margin-bottom: 4px;">
+                <span style="color: #38bdf8; font-weight: bold; font-size: 12px;">📢 HR / Recruiter Post</span> • 
+                <strong style="color: #f8fafc; font-size: 13px;">{poster}</strong> ({comp})
+              </div>
+              <h4 style="margin: 4px 0 6px 0; font-size: 14px; color: #f1f5f9;">{role}</h4>
+              <p style="font-size: 12px; color: #cbd5e1; background: #1e293b; padding: 8px 10px; border-radius: 6px; font-style: italic; margin: 6px 0;">
+                "{snippet}"
+              </p>
+              <div style="font-size: 12px; color: #34d399; margin: 6px 0;">
+                <strong>Contact / Info:</strong> {contact}
+              </div>
+              <div style="margin-top: 8px;">
+                <a href="{post_url}" style="display: inline-block; background: #0284c7; color: #ffffff; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; text-decoration: none;">
+                  View LinkedIn Post →
+                </a>
+              </div>
+            </div>
+            """
+
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b1120; color: #f1f5f9; padding: 20px; }}
+            .container {{ max-width: 660px; margin: 0 auto; background: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }}
+            .header {{ background: linear-gradient(135deg, #0284c7, #6366f1); padding: 28px 24px; }}
+            .title {{ font-size: 20px; font-weight: 700; color: #ffffff; margin: 0 0 6px 0; }}
+            .subtitle {{ font-size: 13.5px; color: #bae6fd; margin: 0; }}
+            .content {{ padding: 24px; }}
+            .meta-bar {{ background: #0f172a; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between; }}
+            .footer {{ background: #0f172a; padding: 18px 24px; text-align: center; font-size: 11.5px; color: #64748b; border-top: 1px solid #334155; }}
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="title">🎯 Target Company Radar Alert: {company_name}</div>
+              <div class="subtitle">Discovered {total_items} newly posted opportunities & hiring announcements for {company_name}</div>
+            </div>
+            <div class="content">
+              <div class="meta-bar">
+                <span>Company Watchlist: <strong>{company_name}</strong></span>
+                <span>Scanned At: <strong>{now_ist}</strong></span>
+              </div>
+              {f'<div style="margin-bottom: 20px;"><h2 style="font-size: 15px; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 6px; margin-bottom: 14px;">⚡ Published Opportunities ({len(valid_jobs)})</h2>{jobs_html}</div>' if jobs_html else ''}
+              {f'<div style="margin-top: 20px;"><h2 style="font-size: 15px; color: #ec4899; border-bottom: 1px solid #334155; padding-bottom: 6px; margin-bottom: 14px;">📢 Recruiter & Hiring Posts ({len(valid_posts)})</h2>{posts_html}</div>' if posts_html else ''}
+            </div>
+            <div class="footer">
+              cMPLiBe's AIScanner Radar Engine • 24/7 Automated Talent Opportunity Surveillance
+            </div>
+          </div>
+        </body>
+        </html>
+        """
+
         return cls.dispatch_email(config, sender, recipient, subject, html_body)
 
     @classmethod

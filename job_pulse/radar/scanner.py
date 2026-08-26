@@ -196,6 +196,11 @@ class CompanyRadarScanner:
                 if not self.db.is_alert_already_sent(p.id, recipient):
                     new_posts_to_email.append(p.model_dump())
 
+        # If delta detected 0 new because of prior runs, but user requested on-demand scan, take top active opportunities
+        if not new_jobs_to_email and not new_posts_to_email and (unique_jobs or matched_posts):
+            new_jobs_to_email = [j.model_dump() for j in unique_jobs[:15]]
+            new_posts_to_email = [p.model_dump() for p in matched_posts[:10]]
+
         email_status = "No recipient configured"
         if send_email and recipient and (new_jobs_to_email or new_posts_to_email):
             if email_config.get("is_enabled", False) or send_email:
@@ -208,7 +213,7 @@ class CompanyRadarScanner:
                 )
                 email_status = msg
                 if success:
-                    # Log alerts as sent so they won't be re-emailed
+                    # Log alerts with current timestamp
                     for item in new_jobs_to_email:
                         log_entry = RadarAlertLog(
                             company_id=target.id,
@@ -217,7 +222,7 @@ class CompanyRadarScanner:
                             title=item["title"],
                             company=item["company"],
                             url=item["url"],
-                            source=item["source_portal"],
+                            source=item.get("source_portal", "Career Page"),
                             experience_text=item.get("experience_text"),
                             location=item.get("location"),
                             recipient_email=recipient,
@@ -229,9 +234,9 @@ class CompanyRadarScanner:
                             company_id=target.id,
                             item_type="post",
                             item_id=item["id"],
-                            title=f"Post by {item['poster_name']}: {item['role_title']}",
-                            company=item["company"],
-                            url=item["post_url"],
+                            title=f"Post by {item.get('poster_name', 'Recruiter')}: {item.get('role_title', 'Opportunity')}",
+                            company=item.get("company", c_name),
+                            url=item.get("post_url", "#"),
                             source="LinkedIn Recruiter Post",
                             location=item.get("location"),
                             recipient_email=recipient,

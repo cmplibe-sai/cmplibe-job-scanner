@@ -90,6 +90,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function applyRoleUI() {
     const isMember = currentAuthRole !== "admin";
+    
+    // Toggle body classes for complete CSS isolation
+    document.body.classList.toggle("role-member", isMember);
+    document.body.classList.toggle("role-admin", !isMember);
+
     const roleBadge = document.getElementById("nav-user-role-badge");
     const userIcon = document.getElementById("nav-user-icon");
     if (roleBadge) {
@@ -112,14 +117,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const memberProfileCard = document.getElementById("member-profile-card");
     const adminUserCard = document.getElementById("admin-user-management-card");
     const chipDocsAdmin = document.getElementById("chip-docs-admin");
+    const tabNavSettings = document.getElementById("main-tab-settings");
 
-    if (adminSettingsCard) adminSettingsCard.classList.toggle("hidden", isMember);
-    if (memberProfileCard) memberProfileCard.classList.toggle("hidden", !isMember);
+    if (adminSettingsCard) {
+      adminSettingsCard.classList.toggle("hidden", isMember);
+      adminSettingsCard.style.display = isMember ? "none" : "";
+    }
+    if (memberProfileCard) {
+      memberProfileCard.classList.toggle("hidden", !isMember);
+      memberProfileCard.style.display = !isMember ? "none" : "";
+    }
     if (adminUserCard) {
       adminUserCard.classList.toggle("hidden", isMember);
+      adminUserCard.style.display = isMember ? "none" : "";
       if (!isMember) loadTeamUsers();
     }
-    if (chipDocsAdmin) chipDocsAdmin.style.display = isMember ? "none" : "";
+    if (chipDocsAdmin) {
+      chipDocsAdmin.style.display = isMember ? "none" : "";
+    }
+    if (tabNavSettings) {
+      tabNavSettings.innerHTML = isMember 
+        ? '<i class="fa-solid fa-key text-green"></i> My Account Password' 
+        : '<i class="fa-solid fa-envelope-circle-check"></i> Email & System Settings';
+    }
   }
 
   async function checkAuth() {
@@ -905,8 +925,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const url = document.getElementById("ats-url").value.trim();
     const company = document.getElementById("ats-company").value.trim();
 
+    if (!url && !company) {
+      showToast("Please enter a Company Name or Career Page URL.", "error");
+      return;
+    }
+
     btnAtsScrape.disabled = true;
-    btnAtsScrape.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Extracting...';
+    btnAtsScrape.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Searching Career Page & Portals...';
 
     try {
       const resp = await fetch("api/scrape/career", {
@@ -916,10 +941,16 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const data = await resp.json();
-      showToast(`Discovered ${data.found} openings (${data.new_saved} new saved)!`, "success");
+      showToast(`Discovered ${data.found} openings across portals (${data.new_saved} new saved)!`, "success");
+      
+      if (company) {
+        window.setSearchMode("company");
+        keywordsInput.value = company;
+      }
       loadJobs();
+      loadPosts();
     } catch (err) {
-      showToast(`Error crawling career page: ${err.message}`, "error");
+      showToast(`Error crawling company portals: ${err.message}`, "error");
     } finally {
       btnAtsScrape.disabled = false;
       btnAtsScrape.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Extract All Openings';
@@ -1169,67 +1200,98 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const term = keywordsInput.value.trim();
+    const titleEl = document.getElementById("jobs-count-title");
+    if (titleEl && currentView === "jobs") {
+      const queryText = term ? ` for '${escapeHtml(term)}'` : "";
+      titleEl.innerHTML = `Discovered Opportunities${queryText} <span class="count-badge" id="jobs-count-badge">${jobs.length}</span>`;
+    }
+
     jobsGrid.innerHTML = jobs
-      .map((job) => {
+      .map((job, idx) => {
         try {
           const rawMode = String(job.work_mode || "").replace(/WorkMode\./g, "").replace(/UNKNOWN/g, "").trim();
           const cleanMode = (!rawMode || rawMode.toLowerCase() === "unknown" || rawMode.toLowerCase() === "not specified") ? "" : rawMode;
           const rawLoc = String(job.location || "").trim();
           const isLocUnspecified = !rawLoc || rawLoc.toLowerCase() === "not specified" || rawLoc.toLowerCase() === "unknown";
-          let locDisplay = isLocUnspecified ? "Location: As Announced" : rawLoc;
+          let locDisplay = isLocUnspecified ? "India / Flexible" : rawLoc;
           if (cleanMode && !locDisplay.toLowerCase().includes(cleanMode.toLowerCase())) {
             locDisplay += ` • ${cleanMode}`;
           }
 
-          const skillsChips = (job.skills || []).slice(0, 5).map(s => `<span class="skill-chip">${escapeHtml(s)}</span>`).join("");
-          const announcedDate = job.posted_date || "Recently Posted";
+          const isTech = (job.role_type || "").toLowerCase() === "technical" || (job.category || "").toLowerCase() === "tech";
+          const roleLabel = isTech ? "💻 Technical Role" : "👔 Non-Technical Role";
+          const roleBadgeClass = isTech ? "badge-tech" : "badge-nontech";
           
+          const portalLower = (job.source_portal || "portal").toLowerCase();
+          let portalIcon = "fa-bolt";
+          if (portalLower.includes("linkedin")) portalIcon = "fa-brands fa-linkedin";
+          else if (portalLower.includes("internshala")) portalIcon = "fa-graduation-cap";
+          else if (portalLower.includes("naukri")) portalIcon = "fa-briefcase";
+          else if (portalLower.includes("unstop")) portalIcon = "fa-trophy";
+          else if (portalLower.includes("shine")) portalIcon = "fa-sun";
+          else if (portalLower.includes("foundit")) portalIcon = "fa-compass";
+
+          const skillsChips = (job.skills || []).slice(0, 4).map(s => `<span class="skill-chip">${escapeHtml(s)}</span>`).join("");
+          const announcedDate = job.posted_date || formatISTDate(job.scraped_at) || "Recently Sourced";
+          const jobNum = idx + 1;
+
           return `
-              <div class="job-card" id="job-card-${job.id}">
-                <div class="job-card-top">
-                  <div class="job-main-info">
-                    <h4><a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="job-title-link" title="Open Job Posting">${escapeHtml(job.title || "Untitled Role")} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 13px; opacity: 0.7; margin-left: 4px;"></i></a></h4>
-                    <div class="job-company-row">
-                      <i class="fa-solid fa-building"></i> ${escapeHtml(job.company || "Company")}
+            <div class="job-card" id="job-card-${job.id}" style="position: relative;">
+              <div class="job-card-top">
+                <div class="job-main-info" style="display: flex; gap: 12px; align-items: flex-start;">
+                  <div style="min-width: 28px; height: 28px; border-radius: 6px; background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(14, 165, 233, 0.3); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #38bdf8;">
+                    #${jobNum}
+                  </div>
+                  <div>
+                    <h4 style="margin: 0 0 4px 0;">
+                      <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="job-title-link" title="Click to view and apply on official portal" style="color: #f8fafc; font-size: 15px; font-weight: 600; text-decoration: none;">
+                        ${escapeHtml(job.title || "Untitled Opportunity")}
+                        <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px; opacity: 0.7; margin-left: 4px; color: #38bdf8;"></i>
+                      </a>
+                    </h4>
+                    <div class="job-company-row" style="font-size: 13px; color: #94a3b8; display: flex; align-items: center; gap: 6px;">
+                      <i class="fa-solid fa-building text-primary"></i> <strong style="color: #cbd5e1;">${escapeHtml(job.company || "Company")}</strong>
                     </div>
                   </div>
-                  <button class="btn-star ${job.is_favorite ? "favorited" : ""}" onclick="toggleJobFavorite('${job.id}')" title="Favorite">
-                    <i class="fa-${job.is_favorite ? "solid" : "regular"} fa-star"></i>
-                  </button>
                 </div>
+                <button class="btn-star ${job.is_favorite ? "favorited" : ""}" onclick="toggleJobFavorite('${job.id}')" title="Favorite">
+                  <i class="fa-${job.is_favorite ? "solid" : "regular"} fa-star"></i>
+                </button>
+              </div>
 
-                <div class="job-tags-row">
-                  <span class="tag-badge portal ${portalClass}">
-                    <i class="fa-solid fa-bolt"></i> ${escapeHtml(job.source_portal || "Portal")}
-                  </span>
-                  <span class="tag-badge ${roleBadgeClass}">
-                    ${roleLabel}
-                  </span>
-                  <span class="tag-badge ${workModeClass}">
-                    <i class="fa-solid fa-location-dot"></i> ${escapeHtml(locDisplay)}
-                  </span>
-                  ${job.is_internship ? `<span class="tag-badge internship"><i class="fa-solid fa-graduation-cap"></i> Internship / Fresher</span>` : ""}
-                  ${job.experience_text ? `<span class="tag-badge exp"><i class="fa-solid fa-briefcase"></i> ${escapeHtml(job.experience_text)}</span>` : ""}
-                  ${job.salary_text ? `<span class="tag-badge salary"><i class="fa-solid fa-money-bill-wave"></i> ${escapeHtml(job.salary_text)}</span>` : ""}
-                </div>
+              <div class="job-tags-row" style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                <span class="tag-badge portal" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                  <i class="${portalIcon}"></i> ${escapeHtml(job.source_portal || "Direct Portal")}
+                </span>
+                <span class="badge ${roleBadgeClass}">
+                  ${roleLabel}
+                </span>
+                <span class="tag-badge" style="background: rgba(255, 255, 255, 0.05); color: #e2e8f0;">
+                  <i class="fa-solid fa-location-dot text-cyan"></i> ${escapeHtml(locDisplay)}
+                </span>
+                ${job.is_internship ? `<span class="tag-badge internship" style="background: rgba(16, 185, 129, 0.15); color: #34d399;"><i class="fa-solid fa-graduation-cap"></i> Internship / Fresher</span>` : ""}
+                ${job.experience_text ? `<span class="tag-badge exp" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;"><i class="fa-solid fa-briefcase"></i> ${escapeHtml(job.experience_text)}</span>` : ""}
+                ${job.salary_text ? `<span class="tag-badge salary" style="background: rgba(16, 185, 129, 0.15); color: #10b981;"><i class="fa-solid fa-money-bill-wave"></i> ${escapeHtml(job.salary_text)}</span>` : ""}
+              </div>
 
-                ${skillsChips ? `<div class="skills-container">${skillsChips}</div>` : ""}
+              ${skillsChips ? `<div class="skills-container" style="margin-bottom: 8px;">${skillsChips}</div>` : ""}
 
-                <div class="job-card-footer">
-                  <span><i class="fa-regular fa-clock"></i> Announced: <strong>${escapeHtml(announcedDate)}</strong></span>
-                  <div class="card-actions">
-                    <select class="status-select" onchange="updateJobStatus('${job.id}', this.value)" style="width: auto; padding: 4px 8px; font-size: 11px;">
-                      <option value="new" ${job.status === 'new' ? 'selected' : ''}>New</option>
-                      <option value="applied" ${job.status === 'applied' ? 'selected' : ''}>Applied</option>
-                      <option value="interviewing" ${job.status === 'interviewing' ? 'selected' : ''}>Interviewing</option>
-                      <option value="archived" ${job.status === 'archived' ? 'selected' : ''}>Archived</option>
-                    </select>
-                    <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="btn-apply">
-                      Apply on ${escapeHtml(job.source_portal || "Site")} <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                    </a>
-                  </div>
+              <div class="job-card-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+                <span style="font-size: 12px; color: #64748b;"><i class="fa-regular fa-clock"></i> Sourced: <strong>${escapeHtml(announcedDate)}</strong></span>
+                <div class="card-actions" style="display: flex; gap: 8px; align-items: center;">
+                  <select class="status-select" onchange="updateJobStatus('${job.id}', this.value)" style="padding: 4px 8px; font-size: 11px; background: #0f172a; color: #cbd5e1; border: 1px solid var(--border-color); border-radius: 6px;">
+                    <option value="new" ${job.status === 'new' ? 'selected' : ''}>New</option>
+                    <option value="applied" ${job.status === 'applied' ? 'selected' : ''}>Applied</option>
+                    <option value="interviewing" ${job.status === 'interviewing' ? 'selected' : ''}>Interviewing</option>
+                    <option value="archived" ${job.status === 'archived' ? 'selected' : ''}>Archived</option>
+                  </select>
+                  <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="btn-primary" style="font-size: 12px; padding: 6px 14px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                    Apply / View Now <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  </a>
                 </div>
               </div>
+            </div>
           `;
         } catch (err) {
           console.error("Error rendering job card:", err);

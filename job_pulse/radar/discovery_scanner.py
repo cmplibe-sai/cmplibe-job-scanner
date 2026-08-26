@@ -77,6 +77,11 @@ class AllIndiaDiscoveryScanner:
             new_posts_to_email = all_posts
 
         # 2. Email Dispatch
+        # If delta detected 0 new because of prior runs, but user requested on-demand scan, send top active opportunities
+        if not new_jobs_to_email and not new_posts_to_email and (all_jobs or all_posts):
+            new_jobs_to_email = all_jobs[:25]
+            new_posts_to_email = all_posts[:15]
+
         email_status = "No recipient email configured for All-India alerts."
         if send_email and recipient and (new_jobs_to_email or new_posts_to_email):
             if email_config.get("all_india_is_enabled", False) or send_email:
@@ -88,7 +93,7 @@ class AllIndiaDiscoveryScanner:
                 )
                 email_status = msg
                 if success:
-                    # Log dispatched items
+                    # Log dispatched items with current timestamp
                     for item in new_jobs_to_email:
                         log_entry = DiscoveryAlertLog(
                             item_type="job",
@@ -108,7 +113,7 @@ class AllIndiaDiscoveryScanner:
                         log_entry = DiscoveryAlertLog(
                             item_type="post",
                             item_id=item["id"],
-                            title=f"Post by {item['poster_name']}: {item['role_title']}",
+                            title=f"Post by {item.get('poster_name', 'Recruiter')}: {item.get('role_title', 'Opportunity')}",
                             company=item.get("company", "Company"),
                             url=item.get("post_url", "#"),
                             source="LinkedIn Recruiter Post",

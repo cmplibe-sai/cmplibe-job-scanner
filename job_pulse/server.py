@@ -412,16 +412,89 @@ def get_scrape_status(user: str = Depends(get_current_user)):
 
 
 @app.post("/api/scrape/career")
-def scrape_career_url(req: DirectCareerRequest, user: str = Depends(get_current_user)):
-    """Directly scrape a company career page or ATS link."""
-    scraper = CareerPageScraper()
-    jobs = scraper.scrape_url(req.url, keyword_filter=req.filter or "", company_override=req.company or "")
-    saved_count = db.save_jobs_batch(jobs)
+def scrape_career_url(req: DirectCareerRequest, background_tasks: BackgroundTasks, user: str = Depends(get_current_user)):
+    """Directly scrape a company career page/ATS link AND all major job portals for that company."""
+    company = (req.company or "").strip()
+    url = (req.url or "").strip()
+    filter_term = (req.filter or "").strip()
+    
+    all_found_jobs: List[JobPost] = []
+    
+    # 1. Direct Career Page / ATS Crawler
+    if url:
+        try:
+            c_scraper = CareerPageScraper()
+            ats_jobs = c_scraper.scrape_url(url, keyword_filter=filter_term, company_override=company)
+            all_found_jobs.extend(ats_jobs)
+        except Exception as e:
+            logger.warning(f"Direct career URL crawl error for {url}: {e}")
+
+    # 2. Multi-Portal Scan for Company across LinkedIn, Internshala, Unstop, Shine
+    if company:
+        q = SearchQuery(
+            keywords=filter_term,
+            company_name=company,
+            search_type="company",
+            experience_level=None,
+            limit=50,
+        )
+        # LinkedIn
+        try:
+            li_res = LinkedInScraper().search(q)
+            if li_res.jobs:
+                all_found_jobs.extend(li_res.jobs)
+        except Exception as e:
+            logger.warning(f"LinkedIn company search error: {e}")
+
+        # Internshala
+        try:
+            int_res = InternshalaScraper().search(q)
+            if int_res.jobs:
+                all_found_jobs.extend(int_res.jobs)
+        except Exception as e:
+            logger.warning(f"Internshala company search error: {e}")
+
+        # Unstop
+        try:
+            uns_res = UnstopScraper().search(q)
+            if uns_res.jobs:
+                all_found_jobs.extend(uns_res.jobs)
+        except Exception as e:
+            logger.warning(f"Unstop company search error: {e}")
+
+        # Shine
+        try:
+            shi_res = ShineScraper().search(q)
+            if shi_res.jobs:
+                all_found_jobs.extend(shi_res.jobs)
+        except Exception as e:
+            logger.warning(f"Shine company search error: {e}")
+
+    # Deduplicate and save
+    unique_jobs, _ = JobDeduplicator.process_and_deduplicate(all_found_jobs)
+    saved_count = db.save_jobs_batch(unique_jobs)
+    
+    # Auto-sync to Google Sheets if enabled
+    sheets_config = db.get_sheets_config()
+    if sheets_config.get("is_enabled") and sheets_config.get("spreadsheet_id_or_url") and unique_jobs:
+        def _bg_sync():
+            target_names = {t.get("company_name", "").lower().strip() for t in db.get_company_targets()}
+            is_target = company.lower().strip() in target_names if company else False
+            target_tab = sheets_config.get("sheet_name_target_radar", "Target Company Radar") if is_target else sheets_config.get("sheet_name_all_india", "All-India Jobs")
+            GoogleSheetsManager.sync_jobs(
+                jobs=[j.model_dump() for j in unique_jobs],
+                config=sheets_config,
+                sheet_name=target_tab,
+            )
+            db.update_sheets_sync_stats(len(unique_jobs))
+        background_tasks.add_task(_bg_sync)
+
     return {
-        "url": req.url,
-        "found": len(jobs),
+        "url": url,
+        "company": company,
+        "found": len(unique_jobs),
         "new_saved": saved_count,
-        "jobs": [j.model_dump() for j in jobs],
+        "jobs": [j.model_dump() for j in unique_jobs],
     }
 
 
@@ -691,7 +764,7 @@ def test_sheets_connection(req: SheetsTestRequest, user: str = Depends(get_curre
 
 @app.post("/api/sheets/sync")
 def sync_to_google_sheets(req: SheetsSyncRequest, background_tasks: BackgroundTasks, user: str = Depends(get_current_user)):
-    """Trigger a synchronization of database jobs and hiring posts to Google Sheets."""
+    """Trigger a synchronization of database jobs and hiring posts to Google Sheets with dedicated tab routing."""
     sheets_config = db.get_sheets_config()
     if not sheets_config.get("is_enabled"):
         return JSONResponse(status_code=400, content={"success": False, "message": "Google Sheets live sync is currently disabled in settings."})
@@ -699,23 +772,54 @@ def sync_to_google_sheets(req: SheetsSyncRequest, background_tasks: BackgroundTa
     def _execute_sync():
         jobs = db.get_jobs(limit=req.limit)
         posts = db.get_hiring_posts(limit=req.limit)
+        targets = db.get_company_targets()
+        target_names = {t.get("company_name", "").lower().strip() for t in targets}
 
-        ok_j, cnt_j, msg_j = GoogleSheetsManager.sync_jobs(
-            jobs=jobs,
-            config=sheets_config,
-            sheet_name=req.sheet_name or sheets_config.get("sheet_name_all_india", "All-India Jobs"),
-        )
-        ok_p, cnt_p, msg_p = GoogleSheetsManager.sync_hiring_posts(
-            posts=posts,
-            config=sheets_config,
-            sheet_name=sheets_config.get("sheet_name_hiring_posts", "Recruiter Posts"),
-        )
-        total_synced = cnt_j + cnt_p
-        if total_synced > 0:
-            db.update_sheets_sync_stats(total_synced)
+        target_jobs = []
+        all_india_jobs = []
+
+        for j in jobs:
+            c_name = (j.get("company") or "").lower().strip()
+            # Check if this company is in watched targets
+            is_target = any(CompanyRadarScanner.is_company_match(c_name, t_name) for t_name in target_names if t_name)
+            if is_target:
+                target_jobs.append(j)
+            else:
+                all_india_jobs.append(j)
+
+        total_synced = 0
+
+        # Sync Target Radar Jobs -> Target Company Radar tab
+        if target_jobs:
+            ok_tj, cnt_tj, _ = GoogleSheetsManager.sync_jobs(
+                jobs=target_jobs,
+                config=sheets_config,
+                sheet_name=sheets_config.get("sheet_name_target_radar", "Target Company Radar"),
+            )
+            total_synced += cnt_tj
+
+        # Sync All-India Jobs -> All-India Jobs tab
+        if all_india_jobs or not target_jobs:
+            ok_aj, cnt_aj, _ = GoogleSheetsManager.sync_jobs(
+                jobs=all_india_jobs if all_india_jobs else jobs,
+                config=sheets_config,
+                sheet_name=sheets_config.get("sheet_name_all_india", "All-India Jobs"),
+            )
+            total_synced += cnt_aj
+
+        # Sync Recruiter Posts -> Recruiter Posts tab
+        if posts:
+            ok_p, cnt_p, _ = GoogleSheetsManager.sync_hiring_posts(
+                posts=posts,
+                config=sheets_config,
+                sheet_name=sheets_config.get("sheet_name_hiring_posts", "Recruiter Posts"),
+            )
+            total_synced += cnt_p
+
+        db.update_sheets_sync_stats(total_synced)
 
     background_tasks.add_task(_execute_sync)
-    return {"message": "Google Sheets synchronization initiated in background."}
+    return {"message": "Google Sheets smart synchronization initiated across Target Radar, All-India, and Recruiter tabs."}
 
 
 @app.post("/api/sheets/clean")

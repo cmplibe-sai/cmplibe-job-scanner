@@ -2274,3 +2274,12 @@ input, select, textarea, button {
   0% { border-color: rgba(99, 102, 241, 0.3); }
   100% { border-color: rgba(6, 182, 212, 0.7); box-shadow: 0 0 16px rgba(6, 182, 212, 0.2); }
 }
+
+/* Strict Member UI Isolation */
+body.role-member #admin-settings-card,
+body.role-member #admin-user-management-card,
+body.role-member [data-role="admin-only"],
+body.role-member #chip-docs-admin {
+  display: none !important;
+}
+

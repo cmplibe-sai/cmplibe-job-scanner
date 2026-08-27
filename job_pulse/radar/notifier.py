@@ -179,6 +179,13 @@ class RadarEmailNotifier:
         if not recipient:
             return False, "Recipient email address is required."
 
+        # Parse multiple comma/semicolon-separated recipient email addresses
+        raw_recipients = [r.strip() for r in str(recipient).replace(";", ",").split(",") if r.strip() and "@" in r]
+        if not raw_recipients:
+            return False, "No valid recipient email addresses provided."
+
+        recipient_display = ", ".join(raw_recipients)
+
         if cls.is_resend_mode(config):
             api_key = cls.get_resend_api_key(config)
             if not api_key:
@@ -197,14 +204,14 @@ class RadarEmailNotifier:
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                     json={
                         "from": from_header,
-                        "to": [recipient],
+                        "to": raw_recipients,
                         "subject": subject,
                         "html": html_body,
                     },
                     timeout=15,
                 )
                 if resp.status_code in [200, 201]:
-                    return True, f"Email delivered via Resend API to {recipient}"
+                    return True, f"Email delivered via Resend API to {recipient_display}"
                 else:
                     err_msg = resp.text
                     try:
@@ -220,13 +227,13 @@ class RadarEmailNotifier:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"cMPLiBe's AIScanner <{sender}>" if "<" not in sender else sender
-        msg["To"] = recipient
+        msg["To"] = recipient_display
         msg.attach(MIMEText(html_body, "html"))
 
         try:
             with cls._create_smtp_connection(config) as server:
-                server.sendmail(sender, [recipient], msg.as_string())
-            return True, f"Email successfully sent to {recipient}"
+                server.sendmail(sender, raw_recipients, msg.as_string())
+            return True, f"Email successfully sent to {recipient_display}"
         except smtplib.SMTPAuthenticationError as e:
             return False, f"SMTP Authentication failed: Invalid username or password ({e})"
         except Exception as e:

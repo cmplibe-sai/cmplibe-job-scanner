@@ -66,14 +66,34 @@
           </div>
         </div>
 
-        <div class="user-auth-bar" style="display: flex; align-items: center; gap: 10px;">
-          <span class="user-pill" id="nav-user-pill" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); padding: 6px 14px; border-radius: 9999px; font-size: 12px; color: #f8fafc;">
-            <i class="fa-solid fa-user-shield text-green" id="nav-user-icon"></i> <strong id="nav-username">admin</strong>
-            <span id="nav-user-role-badge" style="font-size: 10px; background: rgba(14,165,233,0.2); color: #38bdf8; border: 1px solid rgba(14,165,233,0.4); padding: 2px 8px; border-radius: 6px; margin-left: 4px; font-weight: 700; text-transform: uppercase;">Admin</span>
-          </span>
-          <button type="button" class="btn-icon" id="btn-nav-logout" onclick="handleLogout()" title="Sign Out of Team Portal" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
-            <i class="fa-solid fa-right-from-bracket"></i>
-          </button>
+        <div class="user-auth-bar" style="display: flex; align-items: center; gap: 10px; position: relative;">
+          <div class="user-profile-menu-container" style="position: relative;">
+            <button type="button" class="user-pill-btn" id="btn-user-profile-toggle" onclick="toggleUserProfileMenu(event)" style="display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-glass); padding: 7px 16px; border-radius: 9999px; font-size: 12.5px; color: #f8fafc; cursor: pointer; transition: all 0.2s ease;">
+              <i class="fa-solid fa-user-shield text-green" id="nav-user-icon"></i>
+              <strong id="nav-username">admin</strong>
+              <span id="nav-user-role-badge" style="font-size: 10px; background: rgba(14,165,233,0.2); color: #38bdf8; border: 1px solid rgba(14,165,233,0.4); padding: 2px 8px; border-radius: 6px; font-weight: 700; text-transform: uppercase;">Admin</span>
+              <i class="fa-solid fa-chevron-down" style="font-size: 10px; opacity: 0.7; margin-left: 2px;"></i>
+            </button>
+
+            <!-- User Profile Dropdown Menu -->
+            <div id="user-profile-dropdown" class="profile-dropdown-menu hidden">
+              <div class="dropdown-header">
+                <div id="dropdown-user-name" style="font-weight: 700; color: #f8fafc; font-size: 13.5px;">admin</div>
+                <div id="dropdown-user-role" style="font-size: 11px; color: #38bdf8; text-transform: uppercase; font-weight: 600;">Administrator</div>
+              </div>
+              <div class="dropdown-divider"></div>
+              <button type="button" onclick="openPasswordChangeModal()" class="dropdown-item">
+                <i class="fa-solid fa-key text-green"></i> Change My Password
+              </button>
+              <button type="button" onclick="switchMainTab('docs'); closeUserProfileMenu();" class="dropdown-item">
+                <i class="fa-solid fa-book-open text-cyan"></i> Guide & Playbook
+              </button>
+              <div class="dropdown-divider"></div>
+              <button type="button" onclick="handleLogout()" class="dropdown-item text-danger">
+                <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -88,13 +108,13 @@
         <button class="nav-tab" id="nav-tab-discovery" onclick="switchMainTab('discovery')">
           <i class="fa-solid fa-earth-asia"></i> All-India Job Radar 🇮🇳
         </button>
-        <button class="nav-tab" id="nav-tab-sheets" onclick="switchMainTab('sheets')">
+        <button class="nav-tab admin-tab" id="nav-tab-sheets" onclick="switchMainTab('sheets')">
           <i class="fa-solid fa-table-cells"></i> Google Sheet Live Sync 📊
         </button>
-        <button class="nav-tab" id="nav-tab-settings" onclick="switchMainTab('settings')">
+        <button class="nav-tab admin-tab" id="nav-tab-settings" onclick="switchMainTab('settings')">
           <i class="fa-solid fa-envelope-circle-check"></i> Email & System Settings
         </button>
-        <button class="nav-tab" id="nav-tab-docs" onclick="switchMainTab('docs')">
+        <button class="nav-tab admin-tab" id="nav-tab-docs" onclick="switchMainTab('docs')">
           <i class="fa-solid fa-book-open"></i> Guide & Playbook 📖
         </button>
       </nav>
@@ -919,8 +939,9 @@
               </div>
               <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Enables automated 24/7 background email alerts whenever your watched target companies post new openings or recruiter posts.</p>
               <div class="form-group">
-                <label for="recipient-email"><i class="fa-solid fa-inbox"></i> Target Recipient Email <span class="required">*</span></label>
-                <input type="email" id="recipient-email" placeholder="target.alerts@yourdomain.com" required>
+                <label for="recipient-email"><i class="fa-solid fa-inbox"></i> Target Recipient Email(s) <span class="required">*</span></label>
+                <input type="text" id="recipient-email" placeholder="earlitalent@cmplibe.com, hr@cmplibe.com" required>
+                <small class="field-hint">Multiple emails supported (separated by commas e.g. <code>alerts@cmplibe.com, hr@cmplibe.com</code>)</small>
               </div>
               <div class="form-group">
                 <label for="settings-interval"><i class="fa-solid fa-clock"></i> Target Scan Interval</label>
@@ -949,8 +970,9 @@
               </div>
               <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Enables automated 24/7 background email digests for newly published opportunities across all Indian portals.</p>
               <div class="form-group">
-                <label for="all-india-recipient"><i class="fa-solid fa-inbox"></i> All-India Recipient Email <span class="required">*</span></label>
-                <input type="email" id="all-india-recipient" placeholder="allindia.jobs@yourdomain.com" required>
+                <label for="all-india-recipient"><i class="fa-solid fa-inbox"></i> All-India Recipient Email(s) <span class="required">*</span></label>
+                <input type="text" id="all-india-recipient" placeholder="earlitalent@cmplibe.com, allindia.jobs@cmplibe.com" required>
+                <small class="field-hint">Multiple emails supported (separated by commas e.g. <code>earlitalent@cmplibe.com, team@cmplibe.com</code>)</small>
               </div>
               <div class="form-group">
                 <label for="all-india-interval"><i class="fa-solid fa-clock"></i> All-India Scan Interval</label>
@@ -1420,6 +1442,39 @@
         <i class="fa-solid fa-paper-plane"></i>
       </button>
     </form>
+  </div>
+
+  <!-- User Password Change Modal (Accessible from Profile Menu) -->
+  <div id="password-modal" class="auth-overlay hidden">
+    <div class="auth-modal glass-card" style="max-width: 440px;">
+      <div class="auth-header">
+        <div class="auth-icon-wrap" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+          <i class="fa-solid fa-key"></i>
+        </div>
+        <h2>Change Account Password</h2>
+        <p>Update your personal account credentials</p>
+      </div>
+
+      <form id="modal-change-password-form" onsubmit="handleModalChangePassword(event)">
+        <div id="modal-password-msg" class="auth-error-banner hidden"></div>
+        <div class="form-group">
+          <label for="modal-old-password"><i class="fa-solid fa-lock-open"></i> Current Password <span class="required">*</span></label>
+          <input type="password" id="modal-old-password" placeholder="Enter your current password" required>
+        </div>
+        <div class="form-group">
+          <label for="modal-new-password"><i class="fa-solid fa-key"></i> New Password (min 6 chars) <span class="required">*</span></label>
+          <input type="password" id="modal-new-password" placeholder="Enter new password" minlength="6" required>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 14px;">
+          <button type="button" class="btn-secondary" onclick="closePasswordChangeModal()" style="flex: 1;">
+            Cancel
+          </button>
+          <button type="submit" id="btn-modal-change-pass" class="btn-primary" style="flex: 1.5;">
+            <i class="fa-solid fa-shield-check"></i> Update Password
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- Toast Notification Container -->

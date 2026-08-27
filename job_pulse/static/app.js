@@ -83,10 +83,107 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =================================================================
+  // Global Path Resolver for Subpath Hosting (e.g. /job-scanner/)
+  // =================================================================
+  function getApiUrl(endpoint) {
+    const clean = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
+    const path = window.location.pathname;
+    if (path.includes("/job-scanner")) {
+      return "/job-scanner/" + clean;
+    }
+    return "/" + clean;
+  }
+
+  // =================================================================
   // Team Authentication & Security Controller
   // =================================================================
   let currentAuthUser = null;
   let currentAuthRole = "member";
+
+  // User Profile Dropdown Menu Handlers
+  window.toggleUserProfileMenu = (event) => {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById("user-profile-dropdown");
+    if (dropdown) {
+      dropdown.classList.toggle("hidden");
+    }
+  };
+
+  window.closeUserProfileMenu = () => {
+    const dropdown = document.getElementById("user-profile-dropdown");
+    if (dropdown) dropdown.classList.add("hidden");
+  };
+
+  window.openPasswordChangeModal = () => {
+    closeUserProfileMenu();
+    const modal = document.getElementById("password-modal");
+    const msg = document.getElementById("modal-password-msg");
+    if (msg) msg.classList.add("hidden");
+    if (modal) modal.classList.remove("hidden");
+    const oldPass = document.getElementById("modal-old-password");
+    if (oldPass) {
+      oldPass.value = "";
+      oldPass.focus();
+    }
+    const newPass = document.getElementById("modal-new-password");
+    if (newPass) newPass.value = "";
+  };
+
+  window.closePasswordChangeModal = () => {
+    const modal = document.getElementById("password-modal");
+    if (modal) modal.classList.add("hidden");
+  };
+
+  window.handleModalChangePassword = async (e) => {
+    if (e) e.preventDefault();
+    const oldPassword = document.getElementById("modal-old-password").value;
+    const newPassword = document.getElementById("modal-new-password").value;
+    const msgEl = document.getElementById("modal-password-msg");
+    const btn = document.getElementById("btn-modal-change-pass");
+
+    if (!oldPassword || !newPassword) {
+      if (msgEl) {
+        msgEl.innerText = "Please enter both current and new password.";
+        msgEl.classList.remove("hidden");
+      }
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
+    }
+
+    try {
+      const resp = await fetch(getApiUrl("api/auth/password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          old_password: oldPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.detail || data.message || "Failed to update password");
+      }
+
+      showToast("Password updated successfully! Please keep it secure.", "success");
+      closePasswordChangeModal();
+    } catch (err) {
+      if (msgEl) {
+        msgEl.innerText = err.message;
+        msgEl.classList.remove("hidden");
+      }
+      showToast(err.message, "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-shield-check"></i> Update Password';
+      }
+    }
+  };
 
   function applyRoleUI() {
     const isMember = currentAuthRole !== "admin";
@@ -97,15 +194,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const roleBadge = document.getElementById("nav-user-role-badge");
     const userIcon = document.getElementById("nav-user-icon");
+    const dropName = document.getElementById("dropdown-user-name");
+    const dropRole = document.getElementById("dropdown-user-role");
+
+    if (dropName) dropName.innerText = currentAuthUser || "User";
+    if (dropRole) dropRole.innerText = isMember ? "Team Sourcing Member" : "Administrator";
+
     if (roleBadge) {
       if (isMember) {
-        roleBadge.innerText = "👤 Member";
+        roleBadge.innerText = "Member";
         roleBadge.style.background = "rgba(16, 185, 129, 0.15)";
         roleBadge.style.color = "#34d399";
         roleBadge.style.borderColor = "rgba(16, 185, 129, 0.3)";
         if (userIcon) userIcon.className = "fa-solid fa-user text-green";
       } else {
-        roleBadge.innerText = "👑 Admin";
+        roleBadge.innerText = "Admin";
         roleBadge.style.background = "rgba(14, 165, 233, 0.2)";
         roleBadge.style.color = "#38bdf8";
         roleBadge.style.borderColor = "rgba(14, 165, 233, 0.4)";
@@ -113,11 +216,16 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    // Hide/show admin-only navigation tabs
+    const adminTabs = document.querySelectorAll(".admin-tab");
+    adminTabs.forEach(tab => {
+      tab.style.display = isMember ? "none" : "";
+    });
+
     const adminSettingsCard = document.getElementById("admin-settings-card");
     const memberProfileCard = document.getElementById("member-profile-card");
     const adminUserCard = document.getElementById("admin-user-management-card");
     const chipDocsAdmin = document.getElementById("chip-docs-admin");
-    const tabNavSettings = document.getElementById("main-tab-settings");
 
     if (adminSettingsCard) {
       adminSettingsCard.classList.toggle("hidden", isMember);
@@ -135,16 +243,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (chipDocsAdmin) {
       chipDocsAdmin.style.display = isMember ? "none" : "";
     }
-    if (tabNavSettings) {
-      tabNavSettings.innerHTML = isMember 
-        ? '<i class="fa-solid fa-key text-green"></i> My Account Password' 
-        : '<i class="fa-solid fa-envelope-circle-check"></i> Email & System Settings';
+
+    // If a member was on an admin-only tab (e.g. sheets or settings), switch to explorer
+    if (isMember && (currentMainTab === "sheets" || currentMainTab === "settings")) {
+      window.switchMainTab("explorer");
     }
   }
 
   async function checkAuth() {
     try {
-      const res = await fetch("api/auth/me");
+      const res = await fetch(getApiUrl("api/auth/me"));
       const data = await res.json();
       const overlay = document.getElementById("auth-overlay");
       const navUsername = document.getElementById("nav-username");
@@ -184,7 +292,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch("api/auth/login", {
+      const resp = await fetch(getApiUrl("api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -225,7 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.handleLogout = async () => {
     try {
-      await fetch("api/auth/logout", { method: "POST" });
+      await fetch(getApiUrl("api/auth/logout"), { method: "POST" });
     } catch (e) {}
     currentAuthUser = null;
     currentAuthRole = "member";
@@ -251,7 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch("api/auth/change-password", {
+      const resp = await fetch(getApiUrl("api/auth/change-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -282,7 +390,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadTeamUsers() {
     if (currentAuthRole !== "admin") return;
     try {
-      const resp = await fetch("api/auth/users");
+      const resp = await fetch(getApiUrl("api/auth/users"));
       if (!resp.ok) return;
       const data = await resp.json();
       const users = data.users || [];
@@ -368,7 +476,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch("api/auth/users", {
+      const resp = await fetch(getApiUrl("api/auth/users"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, role }),
@@ -399,7 +507,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch(`api/auth/users/${encodeURIComponent(targetUser)}/reset-password`, {
+      const resp = await fetch(getApiUrl(`api/auth/users/${encodeURIComponent(targetUser)}/reset-password`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_password: newPwd }),
@@ -416,7 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.adminToggleStatus = async (targetUser) => {
     try {
-      const resp = await fetch(`api/auth/users/${encodeURIComponent(targetUser)}/toggle-status`, {
+      const resp = await fetch(getApiUrl(`api/auth/users/${encodeURIComponent(targetUser)}/toggle`), {
         method: "POST",
       });
       const data = await resp.json();
@@ -433,7 +541,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.adminDeleteUser = async (targetUser) => {
     if (!confirm(`Are you sure you want to permanently delete user '${targetUser}'?`)) return;
     try {
-      const resp = await fetch(`api/auth/users/${encodeURIComponent(targetUser)}`, {
+      const resp = await fetch(getApiUrl(`api/auth/users/${encodeURIComponent(targetUser)}`), {
         method: "DELETE",
       });
       const data = await resp.json();
@@ -650,7 +758,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btn) btn.disabled = true;
 
     try {
-      const resp = await fetch("api/ai/bee-chat", {
+      const resp = await fetch(getApiUrl("api/ai/bee-chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
@@ -898,7 +1006,7 @@ document.addEventListener("DOMContentLoaded", () => {
     scrapeStartTime = Date.now();
 
     try {
-      const resp = await fetch("api/scrape", {
+      const resp = await fetch(getApiUrl("api/scrape"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -934,7 +1042,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnAtsScrape.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Searching Career Page & Portals...';
 
     try {
-      const resp = await fetch("api/scrape/career", {
+      const resp = await fetch(getApiUrl("api/scrape/career"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, company, filter: "" }),
@@ -962,7 +1070,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = setInterval(async () => {
       try {
-        const resp = await fetch("api/scrape/status");
+        const resp = await fetch(getApiUrl("api/scrape/status"));
         const status = await resp.json();
 
         const elapsedSec = Math.floor((Date.now() - scrapeStartTime) / 1000);
@@ -1037,7 +1145,7 @@ document.addEventListener("DOMContentLoaded", () => {
         url += `&favorite_only=true`;
       }
 
-      const resp = await fetch(url);
+      const resp = await fetch(getApiUrl(url));
       const data = await resp.json();
       allJobs = data.jobs || [];
       renderJobs(allJobs);
@@ -1068,7 +1176,7 @@ document.addEventListener("DOMContentLoaded", () => {
         url += `&role_type=${encodeURIComponent(roleType)}`;
       }
 
-      const resp = await fetch(url);
+      const resp = await fetch(getApiUrl(url));
       const data = await resp.json();
       allPosts = data.posts || [];
       renderPosts(allPosts);
@@ -1417,7 +1525,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =================================================================
   async function loadRadarTargets() {
     try {
-      const resp = await fetch("api/radar/targets");
+      const resp = await fetch(getApiUrl("api/radar/targets"));
       const data = await resp.json();
       const targets = data.targets || [];
       
@@ -1504,7 +1612,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch("api/radar/targets", {
+      const resp = await fetch(getApiUrl("api/radar/targets"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1550,7 +1658,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       showToast("Initiating Radar Scan...", "success");
-      const resp = await fetch(`api/radar/scan?target_id=${targetId || ''}`, { method: "POST" });
+      const resp = await fetch(getApiUrl(`api/radar/scan?target_id=${targetId || ''}`), { method: "POST" });
       const data = await resp.json();
       
       if (titleEl) titleEl.innerText = "Syncing with Google Sheets & Dispatching Email Alerts...";
@@ -1600,7 +1708,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.toggleRadarTarget = async (targetId) => {
     try {
-      await fetch(`api/radar/targets/${targetId}/toggle`, { method: "POST" });
+      await fetch(getApiUrl(`api/radar/targets/${targetId}/toggle`), { method: "POST" });
       loadRadarTargets();
       showToast("Toggled radar monitoring status", "success");
     } catch (err) {
@@ -1611,7 +1719,7 @@ document.addEventListener("DOMContentLoaded", () => {
   window.deleteRadarTarget = async (targetId) => {
     if (!confirm("Remove this company from your radar watchlist?")) return;
     try {
-      await fetch(`api/radar/targets/${targetId}`, { method: "DELETE" });
+      await fetch(getApiUrl(`api/radar/targets/${targetId}`), { method: "DELETE" });
       showToast("Company removed from watchlist", "success");
       loadRadarTargets();
     } catch (err) {
@@ -1621,7 +1729,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadRadarLogs() {
     try {
-      const resp = await fetch("api/radar/logs?limit=50");
+      const resp = await fetch(getApiUrl("api/radar/logs?limit=50"));
       const data = await resp.json();
       const logs = data.logs || [];
       
@@ -1659,7 +1767,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =================================================================
   async function loadDiscoveryLogs() {
     try {
-      const resp = await fetch("api/radar/discovery/logs?limit=100");
+      const resp = await fetch(getApiUrl("api/radar/discovery/logs?limit=100"));
       const data = await resp.json();
       const logs = data.logs || [];
 
@@ -1734,7 +1842,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      const resp = await fetch("api/radar/discovery/scan", {
+      const resp = await fetch(getApiUrl("api/radar/discovery/scan"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1789,7 +1897,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadSheetsSettings() {
     try {
-      const resp = await fetch("api/sheets/settings");
+      const resp = await fetch(getApiUrl("api/sheets/settings"));
       const config = await resp.json();
 
       const enabledEl = document.getElementById("sheets-is-enabled");
@@ -1858,7 +1966,7 @@ document.addEventListener("DOMContentLoaded", () => {
         is_enabled: false,
         auto_sync_on_scrape: false,
       };
-      const resp = await fetch("api/sheets/settings", {
+      const resp = await fetch(getApiUrl("api/sheets/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1892,7 +2000,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      const resp = await fetch("api/sheets/settings", {
+      const resp = await fetch(getApiUrl("api/sheets/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1921,7 +2029,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      const resp = await fetch("api/sheets/test", {
+      const resp = await fetch(getApiUrl("api/sheets/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1940,7 +2048,7 @@ document.addEventListener("DOMContentLoaded", () => {
         sheet_name_target_radar: document.getElementById("sheet-name-target-radar").value.trim() || "Target Company Radar",
         auto_sync_on_scrape: document.getElementById("sheets-auto-sync").checked,
       };
-      await fetch("api/sheets/settings", {
+      await fetch(getApiUrl("api/sheets/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(savePayload),
@@ -1962,7 +2070,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.handleSyncAllToSheets = async () => {
     try {
-      const resp = await fetch("api/sheets/sync", {
+      const resp = await fetch(getApiUrl("api/sheets/sync"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sync_all: true, limit: 1000 }),
@@ -1984,7 +2092,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      const resp = await fetch("api/sheets/clean", {
+      const resp = await fetch(getApiUrl("api/sheets/clean"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -2009,7 +2117,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =================================================================
   async function loadRadarSettings() {
     try {
-      const resp = await fetch("api/radar/settings");
+      const resp = await fetch(getApiUrl("api/radar/settings"));
       const config = await resp.json();
 
       const hostEl = document.getElementById("smtp-host");
@@ -2112,7 +2220,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      const resp = await fetch("api/radar/test-connection", {
+      const resp = await fetch(getApiUrl("api/radar/test-connection"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -2160,7 +2268,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      const resp = await fetch("api/radar/settings", {
+      const resp = await fetch(getApiUrl("api/radar/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -2204,7 +2312,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       showToast(`Sending test ${alertType === "all_india" ? "All-India" : "Target Radar"} email to ${recipient}...`, "info");
-      const resp = await fetch("api/radar/test-email", {
+      const resp = await fetch(getApiUrl("api/radar/test-email"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -2346,12 +2454,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (menu && menu.classList.contains("show") && !menu.contains(event.target) && !trigger.contains(event.target)) {
       menu.classList.remove("show");
     }
+
+    const profileDropdown = document.getElementById("user-profile-dropdown");
+    const profileToggleBtn = document.getElementById("btn-user-profile-toggle");
+    if (profileDropdown && !profileDropdown.classList.contains("hidden") && !profileDropdown.contains(event.target) && (!profileToggleBtn || !profileToggleBtn.contains(event.target))) {
+      profileDropdown.classList.add("hidden");
+    }
   });
 
   // Global helper functions
   window.toggleJobFavorite = async (jobId) => {
     try {
-      await fetch(`api/jobs/${jobId}/favorite`, { method: "POST" });
+      await fetch(getApiUrl(`api/jobs/${jobId}/favorite`), { method: "POST" });
       loadJobs();
     } catch (err) {
       console.error(err);
@@ -2360,7 +2474,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.updateJobStatus = async (jobId, status) => {
     try {
-      await fetch(`api/jobs/${jobId}/status`, {
+      await fetch(getApiUrl(`api/jobs/${jobId}/status`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

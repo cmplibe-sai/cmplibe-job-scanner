@@ -15,6 +15,11 @@ SERVICE_NAME="cmplibe-jobs"
 
 # 1. Detect Package Manager & Install Prerequisites
 if command -v apt-get >/dev/null 2>&1; then
+    echo "📦 [1/6] Waiting for any background system locks to release..."
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+        echo "⏳ Background system update is finishing, waiting 3 seconds..."
+        sleep 3
+    done
     echo "📦 [1/6] Updating packages & installing Python3, Git, Nginx..."
     apt-get update -y
     apt-get install -y python3 python3-pip python3-venv git curl nginx

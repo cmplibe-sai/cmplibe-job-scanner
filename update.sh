@@ -7,7 +7,8 @@ set -e
 
 echo "🚀 [1/3] Pulling latest updates from GitHub main branch..."
 cd /var/www/cmplibe-job-scanner
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 
 echo "📦 [2/3] Checking dependencies..."
 source venv/bin/activate

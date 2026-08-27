@@ -1187,27 +1187,56 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  window.triggerLiveScrapeForCurrentQuery = () => {
+    scrapeForm.dispatchEvent(new Event("submit"));
+  };
+
   // Render Job Cards
   function renderJobs(jobs) {
+    const term = keywordsInput.value.trim();
+    const titleEl = document.getElementById("jobs-count-title");
+    if (titleEl && currentView === "jobs") {
+      const queryText = term ? ` for '${escapeHtml(term)}'` : "";
+      titleEl.innerHTML = `Discovered Opportunities${queryText} <span class="count-badge" id="jobs-count-badge">${jobs ? jobs.length : 0}</span>`;
+    }
+
     if (!jobs || jobs.length === 0) {
       jobsGrid.innerHTML = `
-        <div class="empty-state">
+        <div class="empty-state" style="padding: 32px 20px;">
           <i class="fa-solid fa-magnifying-glass"></i>
-          <h3>No Matching Opportunities Found</h3>
-          <p>Try modifying your filters on the left or click <a href="javascript:void(0)" onclick="clearAllFilters()" style="color: var(--primary-light); font-weight: bold; text-decoration: underline;">Clear All Filters</a> to display all opportunities.</p>
+          <h3>${term ? `No Saved Openings for '${escapeHtml(term)}' in Database` : "No Matching Opportunities Found"}</h3>
+          <p style="margin-bottom: 16px; color: #94a3b8; max-width: 500px; margin-left: auto; margin-right: auto;">
+            ${term ? `Click the button below to search across 9+ live portals (LinkedIn, Naukri, Internshala, Unstop, Shine & Foundit) for '${escapeHtml(term)}' right now!` : "Try modifying your filters on the left or click 'Clear All Filters'."}
+          </p>
+          ${term ? `
+            <button type="button" class="btn-primary" onclick="triggerLiveScrapeForCurrentQuery()" style="font-size: 13.5px; padding: 10px 22px; font-weight: 700;">
+              <i class="fa-solid fa-bolt"></i> Scrape Fresh Jobs Across 9+ Portals Now 🚀
+            </button>
+          ` : `
+            <button type="button" class="btn-secondary" onclick="clearAllFilters()" style="font-size: 12px; padding: 8px 16px;">
+              Clear All Filters
+            </button>
+          `}
         </div>
       `;
       return;
     }
 
-    const term = keywordsInput.value.trim();
-    const titleEl = document.getElementById("jobs-count-title");
-    if (titleEl && currentView === "jobs") {
-      const queryText = term ? ` for '${escapeHtml(term)}'` : "";
-      titleEl.innerHTML = `Discovered Opportunities${queryText} <span class="count-badge" id="jobs-count-badge">${jobs.length}</span>`;
+    let topBannerHtml = "";
+    if (term) {
+      topBannerHtml = `
+        <div class="glass-card" style="margin-bottom: 16px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); padding: 12px 18px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div style="font-size: 13px; color: #f8fafc;">
+            <i class="fa-solid fa-layer-group text-cyan"></i> Showing <strong>${jobs.length}</strong> matching opportunity/opportunities for <strong>'${escapeHtml(term)}'</strong>.
+          </div>
+          <button type="button" class="btn-primary" onclick="triggerLiveScrapeForCurrentQuery()" style="font-size: 12px; padding: 6px 14px; background: linear-gradient(135deg, #0284c7, #2563eb); border: none; display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-bolt"></i> Scrape Fresh Jobs Across 9+ Portals Now 🚀
+          </button>
+        </div>
+      `;
     }
 
-    jobsGrid.innerHTML = jobs
+    const cardsHtml = jobs
       .map((job, idx) => {
         try {
           const rawMode = String(job.work_mode || "").replace(/WorkMode\./g, "").replace(/UNKNOWN/g, "").trim();
@@ -1299,6 +1328,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       })
       .join("");
+
+    jobsGrid.innerHTML = topBannerHtml + cardsHtml;
   }
 
   // Render Recruiter Hiring Posts
@@ -2191,7 +2222,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Left Filter Auto-Listeners
   keywordsInput.addEventListener("input", debounce(loadJobs, 350));
+  keywordsInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      scrapeForm.dispatchEvent(new Event("submit"));
+    }
+  });
   locationCustom.addEventListener("input", debounce(loadJobs, 350));
+  locationCustom.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      scrapeForm.dispatchEvent(new Event("submit"));
+    }
+  });
   roleTypeSelect.addEventListener("change", () => { loadJobs(); loadPosts(); });
   experienceSelect.addEventListener("change", loadJobs);
   workModeSelect.addEventListener("change", loadJobs);

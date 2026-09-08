@@ -68,12 +68,12 @@ class CompanyRadarScanner:
         self.posts_scraper = LinkedInPostsScraper()
         self._lock = threading.Lock()
 
-    def scan_target(self, target: CompanyTarget, send_email: bool = True) -> Dict[str, Any]:
+    def scan_target(self, target: CompanyTarget, send_email: bool = True, is_on_demand: bool = False) -> Dict[str, Any]:
         """Scan a single company across multiple channels and email new delta opportunities."""
         with self._lock:
-            return self._scan_target_impl(target, send_email=send_email)
+            return self._scan_target_impl(target, send_email=send_email, is_on_demand=is_on_demand)
 
-    def _scan_target_impl(self, target: CompanyTarget, send_email: bool = True) -> Dict[str, Any]:
+    def _scan_target_impl(self, target: CompanyTarget, send_email: bool = True, is_on_demand: bool = False) -> Dict[str, Any]:
         c_name = target.company_name.strip()
         logger.info(f"Starting Radar scan for target company: {c_name}")
         
@@ -189,14 +189,14 @@ class CompanyRadarScanner:
                 if not self.db.is_alert_already_sent(p.id, recipient):
                     new_posts_to_email.append(p.model_dump())
 
-        # If delta detected 0 new because of prior runs, but user requested on-demand scan, take top active opportunities
-        if not new_jobs_to_email and not new_posts_to_email and (unique_jobs or matched_posts):
+        # If delta detected 0 new, only take top active opportunities if user explicitly requested an on-demand scan
+        if is_on_demand and not new_jobs_to_email and not new_posts_to_email and (unique_jobs or matched_posts):
             new_jobs_to_email = [j.model_dump() for j in unique_jobs[:15]]
             new_posts_to_email = [p.model_dump() for p in matched_posts[:10]]
 
-        email_status = "No recipient configured"
+        email_status = "No new delta opportunities to email"
         if send_email and recipient and (new_jobs_to_email or new_posts_to_email):
-            if email_config.get("is_enabled", False) or send_email:
+            if email_config.get("is_enabled", False) or is_on_demand:
                 success, msg = RadarEmailNotifier.send_radar_alert(
                     company_name=c_name,
                     new_jobs=new_jobs_to_email,
@@ -269,14 +269,14 @@ class CompanyRadarScanner:
             "errors": errors,
         }
 
-    def scan_all_targets(self, send_email: bool = True) -> List[Dict[str, Any]]:
+    def scan_all_targets(self, send_email: bool = True, is_on_demand: bool = False) -> List[Dict[str, Any]]:
         """Scan all active targets in the Radar watchlist."""
         targets = self.db.get_company_targets(active_only=True)
         results = []
         for t_dict in targets:
             try:
                 target_obj = CompanyTarget(**t_dict)
-                res = self.scan_target(target_obj, send_email=send_email)
+                res = self.scan_target(target_obj, send_email=send_email, is_on_demand=is_on_demand)
                 results.append(res)
             except Exception as e:
                 logger.error(f"Error scanning target {t_dict.get('company_name')}: {e}")

@@ -731,9 +731,9 @@ def trigger_radar_scan(background_tasks: BackgroundTasks, target_id: Optional[st
             t_data = db.get_company_target(target_id)
             if t_data:
                 target_obj = CompanyTarget(**t_data)
-                radar_scanner.scan_target(target_obj, send_email=True)
+                radar_scanner.scan_target(target_obj, send_email=True, is_on_demand=True)
         else:
-            radar_scanner.scan_all_targets(send_email=True)
+            radar_scanner.scan_all_targets(send_email=True, is_on_demand=True)
 
     background_tasks.add_task(_run_scan)
     return {"message": "Target Company Radar scan initiated in background."}

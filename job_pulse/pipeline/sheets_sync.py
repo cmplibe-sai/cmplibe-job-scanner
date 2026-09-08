@@ -96,8 +96,23 @@ class GoogleSheetsManager:
         if not GSPREAD_AVAILABLE:
             raise RuntimeError("gspread or google-auth package is not installed.")
 
-        creds_data = config.get("credentials_json", "").strip()
-        sheet_id_or_url = config.get("spreadsheet_id_or_url", "").strip()
+        import os
+        creds_data = (config.get("credentials_json") or "").strip()
+        if not creds_data:
+            from job_pulse.config import DEFAULT_GOOGLE_SHEETS_CREDS_PATH, DEFAULT_GOOGLE_SHEETS_CREDENTIALS_JSON
+            creds_data = (
+                os.getenv("GOOGLE_SHEETS_CREDS_PATH", "").strip()
+                or DEFAULT_GOOGLE_SHEETS_CREDS_PATH
+                or os.getenv("GOOGLE_SHEETS_CREDENTIALS_JSON", "").strip()
+                or DEFAULT_GOOGLE_SHEETS_CREDENTIALS_JSON
+            )
+        creds_data = creds_data.strip("'\"")
+
+        sheet_id_or_url = (config.get("spreadsheet_id_or_url") or "").strip()
+        if not sheet_id_or_url:
+            from job_pulse.config import DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID
+            sheet_id_or_url = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "").strip() or DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID
+
         sheet_id = cls.extract_spreadsheet_id(sheet_id_or_url)
 
         if not sheet_id:

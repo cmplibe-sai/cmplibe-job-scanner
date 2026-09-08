@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from job_pulse.models import SearchQuery, CompanyTarget, RadarAlertLog, DiscoveryAlertLog, EmailConfig, GoogleSheetsConfig, JobPost
 from job_pulse.orchestrator import ScraperOrchestrator
-from job_pulse.storage.db import JobDatabase
+from job_pulse.storage.factory import get_repository
 from job_pulse.pipeline.exporter import JobExporter
 from job_pulse.pipeline.deduplicator import JobDeduplicator
 from job_pulse.pipeline.sheets_sync import GoogleSheetsManager
@@ -63,7 +63,7 @@ MAX_LOGIN_FAILURES = 8
 LOCKOUT_WINDOW_SECONDS = 900  # 15 minutes
 IS_SECURE_COOKIE = os.getenv("SECURE_COOKIES", "false").lower() in ("true", "1") or os.getenv("ENVIRONMENT") == "production"
 
-db = JobDatabase()
+db = get_repository()
 orchestrator = ScraperOrchestrator(db=db)
 radar_scanner = CompanyRadarScanner(db=db)
 discovery_scanner = AllIndiaDiscoveryScanner(db=db, orchestrator=orchestrator)

@@ -1,25 +1,15 @@
-import sqlite3
 import json
 import logging
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Generator, Tuple
+import time
 from contextlib import contextmanager
-from datetime import datetime
-from job_pulse.utils.time_utils import get_ist_iso, get_ist_now
-from job_pulse.config import (
-    DATABASE_PATH,
-    DEFAULT_SMTP_HOST,
-    DEFAULT_SMTP_PORT,
-    DEFAULT_SMTP_USER,
-    DEFAULT_SMTP_PASSWORD,
-    DEFAULT_SENDER_EMAIL,
-    DEFAULT_RECIPIENT_EMAIL,
-    DEFAULT_ALL_INDIA_RECIPIENT_EMAIL,
-    DEFAULT_RADAR_INTERVAL_MINUTES,
-    DEFAULT_ALL_INDIA_RADAR_INTERVAL_MINUTES,
-    DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID,
-    DEFAULT_GOOGLE_SHEETS_CREDS_PATH,
-)
+from typing import List, Optional, Dict, Any, Generator, Tuple
+
+import psycopg2
+import psycopg2.pool
+import psycopg2.extras
+
+from job_pulse.utils.time_utils import get_ist_iso
+from job_pulse.storage.base import JobRepository
 from job_pulse.models import (
     JobPost,
     HiringPost,
@@ -27,36 +17,86 @@ from job_pulse.models import (
     CompanyTarget,
     RadarAlertLog,
     DiscoveryAlertLog,
-    EmailConfig,
-    GoogleSheetsConfig,
     StoryIngestionLog,
 )
 
-logger = logging.getLogger("job_pulse.storage")
+logger = logging.getLogger("job_pulse.storage.postgres")
+
+# psycopg2 error classes worth a single reconnect-and-retry (transient network blips,
+# a connection Supabase's pooler recycled underneath us, etc). Anything else propagates.
+_TRANSIENT_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)
 
 
-class JobDatabase:
-    """SQLite Database manager for job storage, deduplication, hiring posts, company radar, and query filtering."""
+class PostgresJobRepository(JobRepository):
+    """
+    Postgres/Supabase-backed JobRepository. Mirrors SQLiteJobRepository's behavior
+    method-for-method so callers never need to branch on which backend is active.
 
-    def __init__(self, db_path: Optional[Path] = None, init_default_targets: bool = False):
-        self.db_path = db_path or DATABASE_PATH
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    Connect via a pooled DSN - for Supabase, use the transaction pooler endpoint
+    (port 6543, `?pgbouncer=true` in the connection string) rather than the direct
+    connection (port 5432): this class opens/returns a connection per call, the same
+    "connect, do one thing, release" pattern the SQLite backend uses, and the direct
+    port's connection cap is too low to sustain that pattern under real scraper/radar
+    concurrency.
+    """
+
+    def __init__(
+        self,
+        database_url: str,
+        minconn: int = 1,
+        maxconn: int = 10,
+        init_default_targets: bool = False,
+    ):
+        if not database_url:
+            raise ValueError("PostgresJobRepository requires a non-empty database_url (DATABASE_URL).")
+        self._pool = psycopg2.pool.ThreadedConnectionPool(minconn, maxconn, dsn=database_url)
         self._init_db(init_default_targets=init_default_targets)
 
     @contextmanager
-    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+    def _get_conn(self, retries: int = 2) -> Generator[Any, None, None]:
+        """Borrow a pooled connection; commit on success, rollback on error, always return it."""
+        last_err: Optional[Exception] = None
+        for attempt in range(retries + 1):
+            conn = None
+            try:
+                conn = self._pool.getconn()
+                conn.cursor_factory = psycopg2.extras.RealDictCursor
+                yield conn
+                conn.commit()
+                return
+            except _TRANSIENT_ERRORS as e:
+                last_err = e
+                if conn is not None:
+                    try:
+                        self._pool.putconn(conn, close=True)
+                    except Exception:
+                        pass
+                    conn = None
+                if attempt < retries:
+                    logger.warning(f"Postgres connection error ({e}); retrying ({attempt + 1}/{retries})...")
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise
+            except Exception:
+                if conn is not None:
+                    conn.rollback()
+                raise
+            finally:
+                if conn is not None:
+                    self._pool.putconn(conn)
+        if last_err:
+            raise last_err
+
+    def _cursor(self, conn):
+        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # ==========================================
+    # Schema initialization
+    # ==========================================
 
     def _init_db(self, init_default_targets: bool = False) -> None:
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -65,25 +105,26 @@ class JobDatabase:
                     company TEXT NOT NULL,
                     location TEXT,
                     work_mode TEXT,
-                    is_internship INTEGER DEFAULT 0,
+                    role_type TEXT DEFAULT 'Non-Technical',
+                    is_internship BOOLEAN DEFAULT FALSE,
                     category TEXT DEFAULT 'General',
-                    experience_min REAL,
-                    experience_max REAL,
+                    experience_min DOUBLE PRECISION,
+                    experience_max DOUBLE PRECISION,
                     experience_text TEXT,
-                    salary_min REAL,
-                    salary_max REAL,
+                    salary_min DOUBLE PRECISION,
+                    salary_max DOUBLE PRECISION,
                     salary_currency TEXT,
                     salary_text TEXT,
-                    skills TEXT,
+                    skills JSONB DEFAULT '[]'::jsonb,
                     description TEXT,
                     url TEXT NOT NULL,
                     source_portal TEXT NOT NULL,
                     posted_date TEXT,
                     scraped_at TEXT NOT NULL,
                     dedup_group_id TEXT,
-                    is_favorite INTEGER DEFAULT 0,
+                    is_favorite BOOLEAN DEFAULT FALSE,
                     status TEXT DEFAULT 'new',
-                    raw_data TEXT
+                    raw_data JSONB
                 )
                 """
             )
@@ -103,7 +144,7 @@ class JobDatabase:
                     location TEXT,
                     posted_date TEXT,
                     scraped_at TEXT NOT NULL,
-                    is_favorite INTEGER DEFAULT 0,
+                    is_favorite BOOLEAN DEFAULT FALSE,
                     status TEXT DEFAULT 'new'
                 )
                 """
@@ -111,13 +152,13 @@ class JobDatabase:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS search_runs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                     timestamp TEXT NOT NULL,
                     keywords TEXT NOT NULL,
                     location TEXT,
                     portals TEXT,
                     total_found INTEGER,
-                    execution_time REAL
+                    execution_time DOUBLE PRECISION
                 )
                 """
             )
@@ -129,8 +170,8 @@ class JobDatabase:
                     normalized_name TEXT,
                     career_url TEXT,
                     keywords TEXT,
-                    channels TEXT,
-                    is_active INTEGER DEFAULT 1,
+                    channels JSONB DEFAULT '[]'::jsonb,
+                    is_active BOOLEAN DEFAULT TRUE,
                     source TEXT DEFAULT 'manual',
                     source_row_id TEXT,
                     last_scanned_at TEXT,
@@ -198,8 +239,8 @@ class JobDatabase:
                     sheet_row_hash TEXT NOT NULL UNIQUE,
                     story_date TEXT,
                     main_company TEXT NOT NULL,
-                    competitors TEXT,
-                    targets_created TEXT,
+                    competitors JSONB DEFAULT '[]'::jsonb,
+                    targets_created JSONB DEFAULT '[]'::jsonb,
                     status TEXT DEFAULT 'processed',
                     error_message TEXT,
                     processed_at TEXT NOT NULL
@@ -209,12 +250,12 @@ class JobDatabase:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     role TEXT DEFAULT 'member',
-                    is_active INTEGER DEFAULT 1,
+                    is_active BOOLEAN DEFAULT TRUE,
                     created_at TEXT NOT NULL,
                     last_login_at TEXT
                 )
@@ -226,39 +267,11 @@ class JobDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup ON jobs(dedup_group_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_company ON hiring_posts(company)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_company ON company_targets(company_name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_normalized_name ON company_targets(normalized_name)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_radar_item_email ON radar_alert_logs(item_id, recipient_email)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_item_email ON discovery_alert_logs(item_id, recipient_email)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_story_log_hash ON story_ingestion_log(sheet_row_hash)")
 
-            # Auto-migrate columns if database existed before
-            cursor.execute("PRAGMA table_info(jobs)")
-            cols = [r["name"] for r in cursor.fetchall()]
-            if "is_internship" not in cols:
-                cursor.execute("ALTER TABLE jobs ADD COLUMN is_internship INTEGER DEFAULT 0")
-            if "category" not in cols:
-                cursor.execute("ALTER TABLE jobs ADD COLUMN category TEXT DEFAULT 'General'")
-            if "role_type" not in cols:
-                cursor.execute("ALTER TABLE jobs ADD COLUMN role_type TEXT DEFAULT 'Non-Technical'")
-
-            cursor.execute("PRAGMA table_info(company_targets)")
-            target_cols = [r["name"] for r in cursor.fetchall()]
-            if "normalized_name" not in target_cols:
-                cursor.execute("ALTER TABLE company_targets ADD COLUMN normalized_name TEXT")
-                cursor.execute("UPDATE company_targets SET normalized_name = LOWER(TRIM(company_name)) WHERE normalized_name IS NULL")
-            if "source" not in target_cols:
-                cursor.execute("ALTER TABLE company_targets ADD COLUMN source TEXT DEFAULT 'manual'")
-            if "source_row_id" not in target_cols:
-                cursor.execute("ALTER TABLE company_targets ADD COLUMN source_row_id TEXT")
-
-            cursor.execute("PRAGMA table_info(users)")
-            user_cols = [r["name"] for r in cursor.fetchall()]
-            if "role" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'member'")
-            if "is_active" not in user_cols:
-                cursor.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
-            cursor.execute("UPDATE users SET role = 'admin' WHERE username = 'admin'")
-
-            # Initialize default admin user if none exists
             cursor.execute("SELECT id FROM users WHERE username = 'admin'")
             if not cursor.fetchone():
                 import os
@@ -271,37 +284,39 @@ class JobDatabase:
                     else:
                         default_pwd = secrets.token_urlsafe(16)
                         logger.warning(f"ADMIN_PASSWORD not set in environment. Generated one-time admin password: {default_pwd}")
-                else:
-                    logger.info("Initializing default admin user with configured ADMIN_PASSWORD.")
                 p_hash, salt = hash_password(default_pwd)
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    ("admin", p_hash, salt, "admin", 1, get_ist_iso()),
+                    "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                    ("admin", p_hash, salt, "admin", True, get_ist_iso()),
                 )
 
-            # Initialize default watchlist targets if requested and table is empty
             if init_default_targets:
                 cursor.execute("SELECT COUNT(*) as cnt FROM company_targets")
                 if cursor.fetchone()["cnt"] == 0:
+                    from job_pulse.models import normalize_company_key
                     default_targets = [
-                        ("target_jumbotail", "Jumbotail", "https://jumbotail.com/careers", "software, developer, engineer, intern, analyst", json.dumps(["career_page", "linkedin_posts", "portal"])),
-                        ("target_paytm", "Paytm", "https://paytm.com/careers", "software, engineer, developer, operations, executive", json.dumps(["career_page", "linkedin_posts", "portal"])),
-                        ("target_khatabook", "Khatabook", "https://khatabook.com/careers", "engineer, developer, product, intern", json.dumps(["career_page", "linkedin_posts", "portal"])),
+                        ("target_jumbotail", "Jumbotail", "https://jumbotail.com/careers", "software, developer, engineer, intern, analyst", ["career_page", "linkedin_posts", "portal"]),
+                        ("target_paytm", "Paytm", "https://paytm.com/careers", "software, engineer, developer, operations, executive", ["career_page", "linkedin_posts", "portal"]),
+                        ("target_khatabook", "Khatabook", "https://khatabook.com/careers", "engineer, developer, product, intern", ["career_page", "linkedin_posts", "portal"]),
                     ]
                     now_str = get_ist_iso()
                     for tid, name, url, kw, ch in default_targets:
                         cursor.execute(
-                            "INSERT INTO company_targets (id, company_name, career_url, keywords, channels, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
-                            (tid, name, url, kw, ch, now_str),
+                            """
+                            INSERT INTO company_targets (id, company_name, normalized_name, career_url, keywords, channels, is_active, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
+                            """,
+                            (tid, name, normalize_company_key(name), url, kw, psycopg2.extras.Json(ch), now_str),
                         )
 
-            conn.commit()
+    # ==========================================
+    # Jobs
+    # ==========================================
 
     def save_job(self, job: JobPost, dedup_group_id: Optional[str] = None) -> bool:
-        """Insert or update a job post. Returns True if newly inserted."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM jobs WHERE id = ?", (job.id,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM jobs WHERE id = %s", (job.id,))
             exists = cursor.fetchone() is not None
 
             cursor.execute(
@@ -312,8 +327,8 @@ class JobDatabase:
                     salary_min, salary_max, salary_currency, salary_text,
                     skills, description, url, source_portal,
                     posted_date, scraped_at, dedup_group_id, raw_data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
                     location=excluded.location,
                     role_type=excluded.role_type,
                     salary_min=excluded.salary_min,
@@ -330,7 +345,7 @@ class JobDatabase:
                     job.location,
                     job.work_mode.value if isinstance(job.work_mode, WorkMode) else str(job.work_mode),
                     job.role_type.value if hasattr(job.role_type, "value") else str(job.role_type),
-                    1 if job.is_internship else 0,
+                    bool(job.is_internship),
                     job.category or "General",
                     job.experience_min,
                     job.experience_max,
@@ -339,17 +354,16 @@ class JobDatabase:
                     job.salary_max,
                     job.salary_currency,
                     job.salary_text,
-                    json.dumps(job.skills),
+                    psycopg2.extras.Json(job.skills or []),
                     job.description,
                     job.url,
                     job.source_portal,
                     job.posted_date or "Recently Posted",
                     job.scraped_at,
                     dedup_group_id,
-                    json.dumps(job.raw_data) if job.raw_data else None,
+                    psycopg2.extras.Json(job.raw_data) if job.raw_data else None,
                 ),
             )
-            conn.commit()
             return not exists
 
     def save_jobs_batch(self, jobs: List[JobPost]) -> int:
@@ -358,70 +372,6 @@ class JobDatabase:
             if self.save_job(job):
                 new_count += 1
         return new_count
-
-    def save_hiring_post(self, post: HiringPost) -> bool:
-        """Insert or update a hiring post from LinkedIn/HR."""
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM hiring_posts WHERE id = ?", (post.id,))
-            exists = cursor.fetchone() is not None
-
-            cursor.execute(
-                """
-                INSERT INTO hiring_posts (
-                    id, poster_name, poster_title, poster_profile_url,
-                    company, role_title, post_text, post_url,
-                    contact_email, contact_phone, location, posted_date, scraped_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    post_text=excluded.post_text,
-                    contact_email=COALESCE(excluded.contact_email, hiring_posts.contact_email),
-                    contact_phone=COALESCE(excluded.contact_phone, hiring_posts.contact_phone)
-                """,
-                (
-                    post.id,
-                    post.poster_name,
-                    post.poster_title,
-                    post.poster_profile_url,
-                    post.company,
-                    post.role_title,
-                    post.post_text,
-                    post.post_url,
-                    post.contact_email,
-                    post.contact_phone,
-                    post.location,
-                    post.posted_date,
-                    post.scraped_at,
-                ),
-            )
-            conn.commit()
-            return not exists
-
-    def save_hiring_posts_batch(self, posts: List[HiringPost]) -> int:
-        new_count = 0
-        for p in posts:
-            if self.save_hiring_post(p):
-                new_count += 1
-        return new_count
-
-    def log_search_run(self, keywords: str, location: str, portals: List[str], total_found: int, exec_time: float):
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO search_runs (timestamp, keywords, location, portals, total_found, execution_time)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    get_ist_iso(),
-                    keywords,
-                    location,
-                    ",".join(portals),
-                    total_found,
-                    exec_time,
-                ),
-            )
-            conn.commit()
 
     def get_jobs(
         self,
@@ -438,33 +388,34 @@ class JobDatabase:
         status: Optional[str] = None,
         favorite_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Query jobs with resilient multi-facet filtering."""
         query = "SELECT * FROM jobs WHERE 1=1"
-        params: list[Any] = []
+        params: list = []
 
+        # NOTE: Postgres's LIKE is case-sensitive (unlike SQLite's default LIKE) - use
+        # ILIKE throughout so free-text search behaves the same as it did on SQLite.
         if keywords:
-            query += " AND (title LIKE ? OR company LIKE ? OR skills LIKE ? OR description LIKE ?)"
+            query += " AND (title ILIKE %s OR company ILIKE %s OR skills::text ILIKE %s OR description ILIKE %s)"
             term = f"%{keywords}%"
             params.extend([term, term, term, term])
 
         if company:
-            query += " AND company LIKE ?"
+            query += " AND company ILIKE %s"
             params.append(f"%{company}%")
 
         if location and location.lower() not in ["india", "all", "any", ""]:
-            query += " AND location LIKE ?"
+            query += " AND location ILIKE %s"
             params.append(f"%{location}%")
 
         if portal and portal.lower() not in ["all", ""]:
             p_low = portal.lower()
             if p_low in ["career", "ats", "career pages / ats"]:
-                query += " AND (LOWER(source_portal) LIKE '%greenhouse%' OR LOWER(source_portal) LIKE '%lever%' OR LOWER(source_portal) LIKE '%ashby%' OR LOWER(source_portal) LIKE '%workday%' OR LOWER(source_portal) LIKE '%smartrecruiters%' OR LOWER(source_portal) LIKE '%career%')"
+                query += " AND (source_portal ILIKE '%greenhouse%' OR source_portal ILIKE '%lever%' OR source_portal ILIKE '%ashby%' OR source_portal ILIKE '%workday%' OR source_portal ILIKE '%smartrecruiters%' OR source_portal ILIKE '%career%')"
             else:
-                query += " AND LOWER(source_portal) LIKE ?"
+                query += " AND source_portal ILIKE %s"
                 params.append(f"%{p_low}%")
 
         if work_mode and work_mode not in ["All", ""]:
-            query += " AND work_mode = ?"
+            query += " AND work_mode = %s"
             params.append(work_mode)
 
         if role_type and role_type.lower() not in ["all", ""]:
@@ -474,39 +425,90 @@ class JobDatabase:
                 query += " AND (role_type = 'Non-Technical' OR category != 'Tech')"
 
         if is_internship is True or experience_level == "internship":
-            query += " AND (is_internship = 1 OR title LIKE '%intern%' OR title LIKE '%trainee%' OR experience_text LIKE '%intern%' OR experience_text LIKE '%fresher%')"
+            query += " AND (is_internship = TRUE OR title ILIKE '%intern%' OR title ILIKE '%trainee%' OR experience_text ILIKE '%intern%' OR experience_text ILIKE '%fresher%')"
         elif experience_level == "0-2":
-            query += " AND ((experience_min <= 2 AND experience_min >= 0) OR (experience_max <= 2 AND experience_max >= 0) OR experience_text LIKE '%0-2%' OR experience_text LIKE '%0-1%' OR experience_text LIKE '%1-2%' OR experience_text LIKE '%fresher%' OR title LIKE '%fresher%' OR title LIKE '%entry%' OR title LIKE '%junior%')"
+            query += " AND ((experience_min <= 2 AND experience_min >= 0) OR (experience_max <= 2 AND experience_max >= 0) OR experience_text ILIKE '%0-2%' OR experience_text ILIKE '%0-1%' OR experience_text ILIKE '%1-2%' OR experience_text ILIKE '%fresher%' OR title ILIKE '%fresher%' OR title ILIKE '%entry%' OR title ILIKE '%junior%')"
         elif experience_level == "3-5":
-            query += " AND ((experience_min <= 5 AND experience_max >= 2) OR (experience_min >= 2 AND experience_min <= 5) OR (experience_max >= 3 AND experience_max <= 6) OR experience_text LIKE '%3-5%' OR experience_text LIKE '%3 to 5%' OR experience_text LIKE '%4-5%' OR experience_text LIKE '%3 yrs%' OR experience_text LIKE '%4 yrs%' OR experience_text LIKE '%5 yrs%' OR title LIKE '%mid%' OR title LIKE '%senior%' OR title LIKE '%lead%')"
+            query += " AND ((experience_min <= 5 AND experience_max >= 2) OR (experience_min >= 2 AND experience_min <= 5) OR (experience_max >= 3 AND experience_max <= 6) OR experience_text ILIKE '%3-5%' OR experience_text ILIKE '%3 to 5%' OR experience_text ILIKE '%4-5%' OR experience_text ILIKE '%3 yrs%' OR experience_text ILIKE '%4 yrs%' OR experience_text ILIKE '%5 yrs%' OR title ILIKE '%mid%' OR title ILIKE '%senior%' OR title ILIKE '%lead%')"
         elif experience_level == "6-10":
-            query += " AND (experience_min >= 5 OR experience_max >= 6 OR experience_text LIKE '%6-10%' OR experience_text LIKE '%7-10%' OR experience_text LIKE '%6+%' OR experience_text LIKE '%7+%' OR experience_text LIKE '%8+%' OR title LIKE '%lead%' OR title LIKE '%principal%' OR title LIKE '%manager%')"
+            query += " AND (experience_min >= 5 OR experience_max >= 6 OR experience_text ILIKE '%6-10%' OR experience_text ILIKE '%7-10%' OR experience_text ILIKE '%6+%' OR experience_text ILIKE '%7+%' OR experience_text ILIKE '%8+%' OR title ILIKE '%lead%' OR title ILIKE '%principal%' OR title ILIKE '%manager%')"
         elif experience_level == "10+":
-            query += " AND (experience_min >= 10 OR experience_text LIKE '%10+%' OR experience_text LIKE '%12+%' OR title LIKE '%director%' OR title LIKE '%head%' OR title LIKE '%vp%')"
+            query += " AND (experience_min >= 10 OR experience_text ILIKE '%10+%' OR experience_text ILIKE '%12+%' OR title ILIKE '%director%' OR title ILIKE '%head%' OR title ILIKE '%vp%')"
 
         if status:
-            query += " AND status = ?"
+            query += " AND status = %s"
             params.append(status)
 
         if favorite_only:
-            query += " AND is_favorite = 1"
+            query += " AND is_favorite = TRUE"
 
-        query += " ORDER BY scraped_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY scraped_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(query, params)
-            rows = cursor.fetchall()
             results = []
-            for row in rows:
+            for row in cursor.fetchall():
                 item = dict(row)
-                try:
-                    item["skills"] = json.loads(item["skills"]) if item["skills"] else []
-                except Exception:
-                    item["skills"] = []
+                item["skills"] = item.get("skills") or []  # JSONB already deserialized
                 results.append(item)
             return results
+
+    def update_job_status(self, job_id: str, status: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = self._cursor(conn)
+            cursor.execute("UPDATE jobs SET status = %s WHERE id = %s", (status, job_id))
+            return cursor.rowcount > 0
+
+    def toggle_favorite(self, job_id: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = self._cursor(conn)
+            cursor.execute("UPDATE jobs SET is_favorite = NOT is_favorite WHERE id = %s", (job_id,))
+            return cursor.rowcount > 0
+
+    def delete_job(self, job_id: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = self._cursor(conn)
+            cursor.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+            return cursor.rowcount > 0
+
+    # ==========================================
+    # Hiring Posts
+    # ==========================================
+
+    def save_hiring_post(self, post: HiringPost) -> bool:
+        with self._get_conn() as conn:
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM hiring_posts WHERE id = %s", (post.id,))
+            exists = cursor.fetchone() is not None
+
+            cursor.execute(
+                """
+                INSERT INTO hiring_posts (
+                    id, poster_name, poster_title, poster_profile_url,
+                    company, role_title, post_text, post_url,
+                    contact_email, contact_phone, location, posted_date, scraped_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    post_text=excluded.post_text,
+                    contact_email=COALESCE(excluded.contact_email, hiring_posts.contact_email),
+                    contact_phone=COALESCE(excluded.contact_phone, hiring_posts.contact_phone)
+                """,
+                (
+                    post.id, post.poster_name, post.poster_title, post.poster_profile_url,
+                    post.company, post.role_title, post.post_text, post.post_url,
+                    post.contact_email, post.contact_phone, post.location, post.posted_date, post.scraped_at,
+                ),
+            )
+            return not exists
+
+    def save_hiring_posts_batch(self, posts: List[HiringPost]) -> int:
+        new_count = 0
+        for p in posts:
+            if self.save_hiring_post(p):
+                new_count += 1
+        return new_count
 
     def get_hiring_posts(
         self,
@@ -517,21 +519,20 @@ class JobDatabase:
         limit: int = 50,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """Query hiring posts from HRs and recruiters."""
         query = "SELECT * FROM hiring_posts WHERE 1=1"
-        params: list[Any] = []
+        params: list = []
 
         if keywords:
-            query += " AND (role_title LIKE ? OR post_text LIKE ? OR poster_name LIKE ?)"
+            query += " AND (role_title ILIKE %s OR post_text ILIKE %s OR poster_name ILIKE %s)"
             term = f"%{keywords}%"
             params.extend([term, term, term])
 
         if company:
-            query += " AND company LIKE ?"
+            query += " AND company ILIKE %s"
             params.append(f"%{company}%")
 
         if location and location.lower() not in ["india", "all", ""]:
-            query += " AND location LIKE ?"
+            query += " AND location ILIKE %s"
             params.append(f"%{location}%")
 
         if role_type and role_type.lower() not in ["all", ""]:
@@ -540,18 +541,29 @@ class JobDatabase:
             elif role_type.lower() in ["non-technical", "non_technical", "nontech"]:
                 query += " AND role_type = 'Non-Technical'"
 
-        query += " ORDER BY scraped_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY scraped_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(query, params)
             return [dict(r) for r in cursor.fetchall()]
 
-    def get_stats(self) -> Dict[str, Any]:
-        """Get aggregate metrics."""
+    # ==========================================
+    # Search run logging & stats
+    # ==========================================
+
+    def log_search_run(self, keywords: str, location: str, portals: List[str], total_found: int, exec_time: float) -> None:
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
+            cursor.execute(
+                "INSERT INTO search_runs (timestamp, keywords, location, portals, total_found, execution_time) VALUES (%s, %s, %s, %s, %s, %s)",
+                (get_ist_iso(), keywords, location, ",".join(portals), total_found, exec_time),
+            )
+
+    def get_stats(self) -> Dict[str, Any]:
+        with self._get_conn() as conn:
+            cursor = self._cursor(conn)
             cursor.execute("SELECT COUNT(*) as total FROM jobs")
             total = cursor.fetchone()["total"]
 
@@ -579,36 +591,14 @@ class JobDatabase:
                 "total_companies": total_companies,
             }
 
-    def update_job_status(self, job_id: str, status: str) -> bool:
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def toggle_favorite(self, job_id: str) -> bool:
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE jobs SET is_favorite = ((is_favorite | 1) - (is_favorite & 1)) WHERE id = ?", (job_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-
-    def delete_job(self, job_id: str) -> bool:
-        with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-            conn.commit()
-            return cursor.rowcount > 0
-
     # ==========================================
-    # Target Company Radar & Alerts Storage
+    # Target Company Radar
     # ==========================================
 
     def save_company_target(self, target: CompanyTarget) -> bool:
-        """Add or update a target company in the Radar watchlist."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM company_targets WHERE id = ?", (target.id,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM company_targets WHERE id = %s", (target.id,))
             exists = cursor.fetchone() is not None
 
             cursor.execute(
@@ -616,8 +606,8 @@ class JobDatabase:
                 INSERT INTO company_targets (
                     id, company_name, normalized_name, career_url, keywords, channels,
                     is_active, source, source_row_id, last_scanned_at, last_found_count, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
                     company_name=excluded.company_name,
                     normalized_name=excluded.normalized_name,
                     career_url=excluded.career_url,
@@ -631,8 +621,8 @@ class JobDatabase:
                     target.normalized_name,
                     target.career_url or "",
                     target.keywords or "",
-                    json.dumps(target.channels),
-                    1 if target.is_active else 0,
+                    psycopg2.extras.Json(target.channels or []),
+                    bool(target.is_active),
                     target.source or "manual",
                     target.source_row_id,
                     target.last_scanned_at,
@@ -640,182 +630,138 @@ class JobDatabase:
                     target.created_at,
                 ),
             )
-            conn.commit()
             return not exists
 
     def get_company_targets(self, active_only: bool = False) -> List[Dict[str, Any]]:
-        """Retrieve all or active watched companies."""
         query = "SELECT * FROM company_targets"
         if active_only:
-            query += " WHERE is_active = 1"
+            query += " WHERE is_active = TRUE"
         query += " ORDER BY created_at DESC"
 
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(query)
-            rows = cursor.fetchall()
             results = []
-            for r in rows:
+            for r in cursor.fetchall():
                 item = dict(r)
-                try:
-                    item["channels"] = json.loads(item["channels"]) if item["channels"] else []
-                except Exception:
-                    item["channels"] = []
-                item["is_active"] = bool(item["is_active"])
+                item["channels"] = item.get("channels") or []
                 results.append(item)
             return results
 
     def get_company_target(self, target_id: str) -> Optional[Dict[str, Any]]:
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM company_targets WHERE id = ?", (target_id,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT * FROM company_targets WHERE id = %s", (target_id,))
             row = cursor.fetchone()
             if not row:
                 return None
             item = dict(row)
-            try:
-                item["channels"] = json.loads(item["channels"]) if item["channels"] else []
-            except Exception:
-                item["channels"] = []
-            item["is_active"] = bool(item["is_active"])
+            item["channels"] = item.get("channels") or []
             return item
 
     def update_company_target_scan(self, target_id: str, found_count: int) -> None:
-        """Update last scanned timestamp and found count for a company."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
-                """
-                UPDATE company_targets
-                SET last_scanned_at = ?, last_found_count = ?
-                WHERE id = ?
-                """,
+                "UPDATE company_targets SET last_scanned_at = %s, last_found_count = %s WHERE id = %s",
                 (get_ist_iso(), found_count, target_id),
             )
-            conn.commit()
 
     def toggle_company_target(self, target_id: str) -> bool:
-        """Toggle active state for a watched company."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE company_targets SET is_active = ((is_active | 1) - (is_active & 1)) WHERE id = ?",
-                (target_id,),
-            )
-            conn.commit()
+            cursor = self._cursor(conn)
+            cursor.execute("UPDATE company_targets SET is_active = NOT is_active WHERE id = %s", (target_id,))
             return cursor.rowcount > 0
 
     def delete_company_target(self, target_id: str) -> bool:
-        """Remove a target company from the radar."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM company_targets WHERE id = ?", (target_id,))
-            conn.commit()
+            cursor = self._cursor(conn)
+            cursor.execute("DELETE FROM company_targets WHERE id = %s", (target_id,))
             return cursor.rowcount > 0
 
+    # ==========================================
+    # Target Radar Alert Logs
+    # ==========================================
+
     def is_alert_already_sent(self, item_id: str, recipient_email: str) -> bool:
-        """Check if an opportunity or post has already been emailed to recipient."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
-                "SELECT id FROM radar_alert_logs WHERE item_id = ? AND recipient_email = ?",
+                "SELECT id FROM radar_alert_logs WHERE item_id = %s AND recipient_email = %s",
                 (item_id, recipient_email),
             )
             return cursor.fetchone() is not None
 
     def save_radar_alert_log(self, alert_log: RadarAlertLog) -> bool:
-        """Record an alert as emailed to prevent duplicate notifications."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO radar_alert_logs (
+                INSERT INTO radar_alert_logs (
                     id, company_id, item_type, item_id, title, company, url, source,
                     experience_text, location, emailed_at, recipient_email
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 (
-                    alert_log.id,
-                    alert_log.company_id,
-                    alert_log.item_type,
-                    alert_log.item_id,
-                    alert_log.title,
-                    alert_log.company,
-                    alert_log.url,
-                    alert_log.source,
-                    alert_log.experience_text,
-                    alert_log.location,
-                    alert_log.emailed_at,
-                    alert_log.recipient_email,
+                    alert_log.id, alert_log.company_id, alert_log.item_type, alert_log.item_id,
+                    alert_log.title, alert_log.company, alert_log.url, alert_log.source,
+                    alert_log.experience_text, alert_log.location, alert_log.emailed_at, alert_log.recipient_email,
                 ),
             )
-            conn.commit()
             return cursor.rowcount > 0
 
     def get_radar_alert_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Retrieve recent sent radar alerts."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM radar_alert_logs ORDER BY emailed_at DESC LIMIT ?", (limit,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT * FROM radar_alert_logs ORDER BY emailed_at DESC LIMIT %s", (limit,))
             return [dict(r) for r in cursor.fetchall()]
 
     # ==========================================
-    # All-India Discovery Radar & Alerts Storage
+    # All-India Discovery Alert Logs
     # ==========================================
 
     def is_discovery_alert_already_sent(self, item_id: str, recipient_email: str) -> bool:
-        """Check if an opportunity has already been emailed to recipient in All-India discovery alerts."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
-                "SELECT id FROM discovery_alert_logs WHERE item_id = ? AND recipient_email = ?",
+                "SELECT id FROM discovery_alert_logs WHERE item_id = %s AND recipient_email = %s",
                 (item_id, recipient_email),
             )
             return cursor.fetchone() is not None
 
     def save_discovery_alert_log(self, alert_log: DiscoveryAlertLog) -> bool:
-        """Record a broad discovery alert as emailed to prevent duplicate notifications."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO discovery_alert_logs (
+                INSERT INTO discovery_alert_logs (
                     id, item_type, item_id, title, company, url, source,
                     role_type, experience_text, location, emailed_at, recipient_email
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 (
-                    alert_log.id,
-                    alert_log.item_type,
-                    alert_log.item_id,
-                    alert_log.title,
-                    alert_log.company,
-                    alert_log.url,
-                    alert_log.source,
-                    alert_log.role_type or "Non-Technical",
-                    alert_log.experience_text,
-                    alert_log.location,
-                    alert_log.emailed_at,
-                    alert_log.recipient_email,
+                    alert_log.id, alert_log.item_type, alert_log.item_id, alert_log.title,
+                    alert_log.company, alert_log.url, alert_log.source, alert_log.role_type or "Non-Technical",
+                    alert_log.experience_text, alert_log.location, alert_log.emailed_at, alert_log.recipient_email,
                 ),
             )
-            conn.commit()
             return cursor.rowcount > 0
 
     def get_discovery_alert_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Retrieve recent sent All-India discovery alerts."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM discovery_alert_logs ORDER BY emailed_at DESC LIMIT ?", (limit,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT * FROM discovery_alert_logs ORDER BY emailed_at DESC LIMIT %s", (limit,))
             return [dict(r) for r in cursor.fetchall()]
 
     # ==========================================
-    # Google Sheets Settings & Sync Stats Storage
+    # Google Sheets Settings
     # ==========================================
 
     def get_sheets_config(self) -> Dict[str, Any]:
-        """Fetch Google Sheets integration configuration."""
         import os
+        from job_pulse.config import DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID, DEFAULT_GOOGLE_SHEETS_CREDS_PATH
         defaults = {
             "is_enabled": os.getenv("SHEETS_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "auth_mode": "service_account",
@@ -829,10 +775,9 @@ class JobDatabase:
             "last_synced_count": 0,
         }
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute("SELECT key, value FROM sheets_settings")
-            rows = cursor.fetchall()
-            for r in rows:
+            for r in cursor.fetchall():
                 k, v = r["key"], r["value"]
                 if k in defaults:
                     if k in ["is_enabled", "auto_sync_on_scrape"]:
@@ -844,54 +789,49 @@ class JobDatabase:
         return defaults
 
     def save_sheets_config(self, config_dict: Dict[str, Any]) -> bool:
-        """Save Google Sheets integration settings to database."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             for k, v in config_dict.items():
                 val_str = str(v) if v is not None else ""
                 cursor.execute(
-                    """
-                    INSERT INTO sheets_settings (key, value) VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
-                    """,
+                    "INSERT INTO sheets_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value=excluded.value",
                     (str(k), val_str),
                 )
-            conn.commit()
             return True
 
     def update_sheets_sync_stats(self, synced_count: int) -> None:
-        """Update last sync timestamp and record count for Google Sheets in IST."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             now = get_ist_iso()
             cursor.execute(
-                "INSERT INTO sheets_settings (key, value) VALUES ('last_synced_at', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                "INSERT INTO sheets_settings (key, value) VALUES ('last_synced_at', %s) ON CONFLICT (key) DO UPDATE SET value=excluded.value",
                 (now,),
             )
             cursor.execute(
-                "INSERT INTO sheets_settings (key, value) VALUES ('last_synced_count', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                "INSERT INTO sheets_settings (key, value) VALUES ('last_synced_count', %s) ON CONFLICT (key) DO UPDATE SET value=excluded.value",
                 (str(synced_count),),
             )
-            conn.commit()
 
     # ==========================================
     # Email & Dual Radar Configuration
     # ==========================================
 
     def get_email_config(self) -> Dict[str, Any]:
-        """Fetch email notification, Target Radar, and All-India Discovery Radar settings."""
         import os
+        from job_pulse.config import (
+            DEFAULT_SMTP_HOST, DEFAULT_SMTP_PORT, DEFAULT_SMTP_USER, DEFAULT_SMTP_PASSWORD,
+            DEFAULT_SENDER_EMAIL, DEFAULT_RECIPIENT_EMAIL, DEFAULT_ALL_INDIA_RECIPIENT_EMAIL,
+            DEFAULT_RADAR_INTERVAL_MINUTES, DEFAULT_ALL_INDIA_RADAR_INTERVAL_MINUTES,
+        )
         defaults = {
             "smtp_host": DEFAULT_SMTP_HOST,
             "smtp_port": DEFAULT_SMTP_PORT,
             "smtp_user": DEFAULT_SMTP_USER,
             "smtp_password": DEFAULT_SMTP_PASSWORD,
             "sender_email": DEFAULT_SENDER_EMAIL,
-            # Target Radar Recipient & Settings
             "recipient_email": DEFAULT_RECIPIENT_EMAIL,
             "is_enabled": os.getenv("RADAR_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "check_interval_minutes": DEFAULT_RADAR_INTERVAL_MINUTES,
-            # All-India Discovery Radar Recipient & Settings
             "all_india_recipient": DEFAULT_ALL_INDIA_RECIPIENT_EMAIL or DEFAULT_RECIPIENT_EMAIL,
             "all_india_is_enabled": os.getenv("ALL_INDIA_RADAR_IS_ENABLED", "false").lower() in ["true", "1", "yes"],
             "all_india_interval_minutes": DEFAULT_ALL_INDIA_RADAR_INTERVAL_MINUTES,
@@ -900,10 +840,9 @@ class JobDatabase:
             "all_india_role_types": "all",
         }
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute("SELECT key, value FROM radar_settings")
-            rows = cursor.fetchall()
-            for r in rows:
+            for r in cursor.fetchall():
                 k, v = r["key"], r["value"]
                 if k in defaults:
                     if k in ["smtp_port", "check_interval_minutes", "all_india_interval_minutes"]:
@@ -918,18 +857,13 @@ class JobDatabase:
         return defaults
 
     def save_email_config(self, config_dict: Dict[str, Any]) -> bool:
-        """Save email notification and SMTP settings to database."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             for k, v in config_dict.items():
                 cursor.execute(
-                    """
-                    INSERT INTO radar_settings (key, value) VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value
-                    """,
+                    "INSERT INTO radar_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value=excluded.value",
                     (str(k), str(v)),
                 )
-            conn.commit()
             return True
 
     # ==========================================
@@ -937,15 +871,17 @@ class JobDatabase:
     # ==========================================
 
     def verify_user_credentials(self, username: str, password: str) -> Optional[Dict[str, Any]]:
-        """Verify username and password against users table. Returns user dict if valid and active, else None."""
         from job_pulse.security import verify_password
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, username, password_hash, salt, role, is_active FROM users WHERE username = ?", (username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute(
+                "SELECT id, username, password_hash, salt, role, is_active FROM users WHERE username = %s",
+                (username.strip(),),
+            )
             row = cursor.fetchone()
             if not row:
                 return None
-            if row["is_active"] != 1:
+            if not row["is_active"]:
                 return None
             if not verify_password(password, row["password_hash"], row["salt"]):
                 return None
@@ -957,15 +893,13 @@ class JobDatabase:
             }
 
     def get_user_role(self, username: str) -> Optional[str]:
-        """Fetch role ('admin' or 'member') for a given username."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT role FROM users WHERE username = ?", (username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT role FROM users WHERE username = %s", (username.strip(),))
             row = cursor.fetchone()
             return row["role"] if row else None
 
     def add_user(self, username: str, password: str, role: str = "member") -> Tuple[bool, str]:
-        """Add a new team user with username, password, and assigned role."""
         from job_pulse.security import hash_password
         uname = username.strip()
         if not uname or len(uname) < 3:
@@ -975,27 +909,25 @@ class JobDatabase:
         role_clean = "admin" if role.lower() == "admin" else "member"
 
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (uname,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM users WHERE username = %s", (uname,))
             if cursor.fetchone():
                 return False, f"Username '{uname}' is already taken."
 
             p_hash, salt = hash_password(password)
             cursor.execute(
-                "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (uname, p_hash, salt, role_clean, 1, get_ist_iso()),
+                "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (uname, p_hash, salt, role_clean, True, get_ist_iso()),
             )
-            conn.commit()
             return True, f"User '{uname}' ({role_clean}) created successfully."
 
     def change_user_password(self, username: str, old_password: str, new_password: str) -> Tuple[bool, str]:
-        """Change user password after verifying old password."""
         from job_pulse.security import verify_password, hash_password
         if not new_password or len(new_password) < 6:
             return False, "New password must be at least 6 characters long."
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT password_hash, salt FROM users WHERE username = ?", (username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT password_hash, salt FROM users WHERE username = %s", (username.strip(),))
             row = cursor.fetchone()
             if not row:
                 return False, "User not found."
@@ -1004,79 +936,66 @@ class JobDatabase:
 
             p_hash, salt = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?",
-                (p_hash, salt, username.strip())
+                "UPDATE users SET password_hash = %s, salt = %s WHERE username = %s",
+                (p_hash, salt, username.strip()),
             )
-            conn.commit()
             return True, "Password updated successfully."
 
     def admin_reset_user_password(self, target_username: str, new_password: str) -> Tuple[bool, str]:
-        """Admin direct password reset for any team user."""
         from job_pulse.security import hash_password
         if not new_password or len(new_password) < 6:
             return False, "New password must be at least 6 characters long."
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (target_username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM users WHERE username = %s", (target_username.strip(),))
             if not cursor.fetchone():
                 return False, f"User '{target_username}' not found."
 
             p_hash, salt = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?",
-                (p_hash, salt, target_username.strip())
+                "UPDATE users SET password_hash = %s, salt = %s WHERE username = %s",
+                (p_hash, salt, target_username.strip()),
             )
-            conn.commit()
             return True, f"Password for '{target_username}' has been reset successfully."
 
     def admin_toggle_user_status(self, target_username: str, requesting_username: str) -> Tuple[bool, str]:
-        """Toggle active/inactive status for a user."""
         if target_username.strip() == requesting_username.strip():
             return False, "You cannot deactivate your own logged-in account."
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT is_active FROM users WHERE username = ?", (target_username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT is_active FROM users WHERE username = %s", (target_username.strip(),))
             row = cursor.fetchone()
             if not row:
                 return False, f"User '{target_username}' not found."
 
-            new_status = 0 if row["is_active"] == 1 else 1
-            cursor.execute("UPDATE users SET is_active = ? WHERE username = ?", (new_status, target_username.strip()))
-            conn.commit()
-            status_text = "activated" if new_status == 1 else "deactivated"
+            new_status = not row["is_active"]
+            cursor.execute("UPDATE users SET is_active = %s WHERE username = %s", (new_status, target_username.strip()))
+            status_text = "activated" if new_status else "deactivated"
             return True, f"User '{target_username}' has been {status_text}."
 
     def admin_delete_user(self, target_username: str, requesting_username: str) -> Tuple[bool, str]:
-        """Delete a team user from the database."""
         if target_username.strip() == requesting_username.strip():
             return False, "You cannot delete your own account."
         if target_username.strip().lower() == "admin":
             return False, "The default 'admin' account cannot be deleted."
 
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (target_username.strip(),))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM users WHERE username = %s", (target_username.strip(),))
             if not cursor.fetchone():
                 return False, f"User '{target_username}' not found."
 
-            cursor.execute("DELETE FROM users WHERE username = ?", (target_username.strip(),))
-            conn.commit()
+            cursor.execute("DELETE FROM users WHERE username = %s", (target_username.strip(),))
             return True, f"User '{target_username}' deleted successfully."
 
     def update_user_last_login(self, username: str) -> None:
-        """Update last login timestamp in IST."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE users SET last_login_at = ? WHERE username = ?",
-                (get_ist_iso(), username.strip())
-            )
-            conn.commit()
+            cursor = self._cursor(conn)
+            cursor.execute("UPDATE users SET last_login_at = %s WHERE username = %s", (get_ist_iso(), username.strip()))
 
     def get_users_list(self) -> List[Dict[str, Any]]:
-        """Return list of registered team users."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute("SELECT id, username, role, is_active, created_at, last_login_at FROM users ORDER BY created_at ASC")
             return [dict(r) for r in cursor.fetchall()]
 
@@ -1085,57 +1004,47 @@ class JobDatabase:
     # ==========================================
 
     def is_story_row_processed(self, row_hash: str) -> bool:
-        """Check whether a 'cMPLi Dip Stories' sheet row has already been ingested."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM story_ingestion_log WHERE sheet_row_hash = ?", (row_hash,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT id FROM story_ingestion_log WHERE sheet_row_hash = %s", (row_hash,))
             return cursor.fetchone() is not None
 
     def log_story_ingestion(self, log: StoryIngestionLog) -> bool:
-        """Record the outcome of processing one story-sheet row (idempotency watermark)."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
+            cursor = self._cursor(conn)
             cursor.execute(
                 """
                 INSERT INTO story_ingestion_log (
                     id, sheet_row_hash, story_date, main_company, competitors,
                     targets_created, status, error_message, processed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(sheet_row_hash) DO UPDATE SET
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (sheet_row_hash) DO UPDATE SET
                     status=excluded.status,
                     targets_created=excluded.targets_created,
                     error_message=excluded.error_message,
                     processed_at=excluded.processed_at
                 """,
                 (
-                    log.id,
-                    log.sheet_row_hash,
-                    log.story_date,
-                    log.main_company,
-                    json.dumps(log.competitors),
-                    json.dumps(log.targets_created),
-                    log.status,
-                    log.error_message,
-                    log.processed_at,
+                    log.id, log.sheet_row_hash, log.story_date, log.main_company,
+                    psycopg2.extras.Json(log.competitors or []),
+                    psycopg2.extras.Json(log.targets_created or []),
+                    log.status, log.error_message, log.processed_at,
                 ),
             )
-            conn.commit()
             return True
 
     def get_story_ingestion_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Retrieve recent story-ingestion run history for observability/debugging."""
         with self._get_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM story_ingestion_log ORDER BY processed_at DESC LIMIT ?", (limit,))
+            cursor = self._cursor(conn)
+            cursor.execute("SELECT * FROM story_ingestion_log ORDER BY processed_at DESC LIMIT %s", (limit,))
             results = []
             for r in cursor.fetchall():
                 item = dict(r)
-                try:
-                    item["competitors"] = json.loads(item["competitors"]) if item["competitors"] else []
-                    item["targets_created"] = json.loads(item["targets_created"]) if item["targets_created"] else []
-                except Exception:
-                    item["competitors"], item["targets_created"] = [], []
+                item["competitors"] = item.get("competitors") or []
+                item["targets_created"] = item.get("targets_created") or []
                 results.append(item)
             return results
 
-
+    def close(self) -> None:
+        """Close all pooled connections - call on app shutdown."""
+        self._pool.closeall()

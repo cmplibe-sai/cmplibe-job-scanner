@@ -5,15 +5,19 @@ from typing import Optional
 from job_pulse.storage.db import JobDatabase
 from job_pulse.radar.scanner import CompanyRadarScanner
 from job_pulse.radar.discovery_scanner import AllIndiaDiscoveryScanner
+from job_pulse.config import STORY_INGESTION_ENABLED, STORY_INGESTION_INTERVAL_MINUTES
 
 logger = logging.getLogger("job_pulse.radar.scheduler")
 
 
 class RadarBackgroundScheduler:
     """
-    Background thread scheduler orchestrating dual radar systems:
+    Background thread scheduler orchestrating three systems:
     1. Radar 1: Target Company Watchlist Scanner (Dispatches to Target Recipient)
     2. Radar 2: All-India Multi-Portal Opportunity Radar (Dispatches to All-India Recipient & Live Google Sheets)
+    3. Story Ingestion: registers new companies/competitors from the 'cMPLi Dip Stories'
+       sheet as radar targets (STORY_INGESTION_ENABLED env var). Newly registered targets
+       are picked up by the *next* Radar 1 cycle above, not scanned synchronously here.
     """
 
     def __init__(self, db: Optional[JobDatabase] = None):
@@ -24,6 +28,7 @@ class RadarBackgroundScheduler:
         self._thread: Optional[threading.Thread] = None
         self._last_target_scan: float = 0.0
         self._last_discovery_scan: float = 0.0
+        self._last_story_ingestion: float = 0.0
 
     def start(self) -> None:
         """Start the background scheduler thread if not already running."""
@@ -78,6 +83,22 @@ class RadarBackgroundScheduler:
                         self._last_discovery_scan = time.time()
                     except Exception as e:
                         logger.error(f"Error during All-India Discovery Radar scan: {e}", exc_info=True)
+
+                # ----------------------------------------------------
+                # Story Ingestion: register new companies/competitors from
+                # the 'cMPLi Dip Stories' sheet as radar targets.
+                # ----------------------------------------------------
+                story_interval_sec = max(30, STORY_INGESTION_INTERVAL_MINUTES) * 60
+                if STORY_INGESTION_ENABLED and (now - self._last_story_ingestion >= story_interval_sec):
+                    logger.info("Running scheduled Story Ingestion (company discovery) sync...")
+                    try:
+                        from job_pulse.radar.story_worker import sync_companies_from_stories
+                        sheets_config = self.db.get_sheets_config()
+                        stats = sync_companies_from_stories(self.db, sheets_config)
+                        logger.info(f"Story Ingestion complete: {stats}")
+                        self._last_story_ingestion = time.time()
+                    except Exception as e:
+                        logger.error(f"Error during Story Ingestion sync: {e}", exc_info=True)
 
                 # Sleep in short increments for responsive shutdown
                 for _ in range(6):  # 30 seconds check cycle

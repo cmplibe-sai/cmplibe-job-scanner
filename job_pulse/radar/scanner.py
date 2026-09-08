@@ -3,7 +3,7 @@ import time
 import re
 import threading
 from typing import List, Dict, Any, Optional
-from job_pulse.models import CompanyTarget, JobPost, HiringPost, SearchQuery, RadarAlertLog
+from job_pulse.models import CompanyTarget, JobPost, HiringPost, SearchQuery, RadarAlertLog, normalize_company_key
 from job_pulse.storage.db import JobDatabase
 from job_pulse.scrapers.career_pages import CareerPageScraper
 from job_pulse.scrapers.linkedin import LinkedInScraper
@@ -35,21 +35,8 @@ class CompanyRadarScanner:
         if not job_company or not target_company:
             return False
 
-        def _clean_name(name: str) -> str:
-            n = name.lower()
-            noise_patterns = [
-                r"\bprivate\s*limited\b", r"\bpvt\s*ltd\b", r"\blimited\b", r"\bltd\b",
-                r"\btechnologies\b", r"\btechnology\b", r"\bservices\b", r"\bsolutions\b",
-                r"\bcorporation\b", r"\bcorp\b", r"\binc\b", r"\bllc\b", r"\bglobal\b",
-                r"\bindia\b", r"\bapp\b", r"\blabs?\b", r"\bgroup\b", r"\bsoftware\b"
-            ]
-            for pat in noise_patterns:
-                n = re.sub(pat, " ", n)
-            n = re.sub(r"[^\w\s]", " ", n)
-            return " ".join(n.split()).strip()
-
-        clean_job_comp = _clean_name(job_company) or job_company.lower().strip()
-        clean_target = _clean_name(target_company) or target_company.lower().strip()
+        clean_job_comp = normalize_company_key(job_company) or job_company.lower().strip()
+        clean_target = normalize_company_key(target_company) or target_company.lower().strip()
 
         if not clean_job_comp or not clean_target:
             return False

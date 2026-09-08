@@ -40,6 +40,27 @@ def generate_job_id(source: str, company: str, title: str, location: str = "") -
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
+_COMPANY_NOISE_PATTERNS = [
+    r"\bprivate\s*limited\b", r"\bpvt\s*ltd\b", r"\blimited\b", r"\bltd\b",
+    r"\btechnologies\b", r"\btechnology\b", r"\bservices\b", r"\bsolutions\b",
+    r"\bcorporation\b", r"\bcorp\b", r"\binc\b", r"\bllc\b", r"\bglobal\b",
+    r"\bindia\b", r"\bapp\b", r"\blabs?\b", r"\bgroup\b", r"\bsoftware\b",
+]
+
+
+def normalize_company_key(name: str) -> str:
+    """
+    Lowercase, legal-suffix-stripped normalization of a company name, used both to
+    fuzzy-match a scraped job's company against a watched target (CompanyRadarScanner.is_company_match)
+    and to dedupe newly-ingested company names against existing radar targets.
+    """
+    n = (name or "").lower()
+    for pat in _COMPANY_NOISE_PATTERNS:
+        n = re.sub(pat, " ", n)
+    n = re.sub(r"[^\w\s]", " ", n)
+    return " ".join(n.split()).strip()
+
+
 TECH_KEYWORDS = {
     "developer", "engineer", "software", "frontend", "front end", "backend", "back end",
     "fullstack", "full stack", "python", "java", "golang", "c++", "react", "node", "devops",
@@ -402,12 +423,15 @@ class CompanyTarget(BaseModel):
     """Target company watched by the Radar for new jobs, posts and social updates."""
     id: str = Field(default="")
     company_name: str
+    normalized_name: Optional[str] = None
     career_url: Optional[str] = ""
     keywords: Optional[str] = ""
     channels: List[str] = Field(
         default_factory=lambda: ["ats", "linkedin", "internshala", "unstop", "shine", "social_posts"]
     )
     is_active: bool = True
+    source: str = "manual"  # 'manual' or 'story_ingestion'
+    source_row_id: Optional[str] = None  # StoryIngestionLog.id, when source == 'story_ingestion'
     last_scanned_at: Optional[str] = None
     last_found_count: int = 0
     created_at: str = Field(default_factory=get_ist_iso)
@@ -416,6 +440,29 @@ class CompanyTarget(BaseModel):
         if not self.id:
             raw = f"target:{self.company_name.strip().lower()}"
             self.id = hashlib.md5(raw.encode("utf-8")).hexdigest()
+        if not self.normalized_name:
+            self.normalized_name = normalize_company_key(self.company_name)
+
+
+class StoryIngestionLog(BaseModel):
+    """
+    Idempotency watermark for the automated company-discovery pipeline: records that a
+    row from the 'cMPLi Dip Stories' sheet has been processed, independent of its row
+    position (which can shift if rows are sorted/inserted in the sheet).
+    """
+    id: str = Field(default="")
+    sheet_row_hash: str
+    story_date: Optional[str] = None
+    main_company: str
+    competitors: List[str] = Field(default_factory=list)
+    targets_created: List[str] = Field(default_factory=list)  # CompanyTarget.id values
+    status: str = "processed"  # 'processed' | 'skipped' | 'error'
+    error_message: Optional[str] = None
+    processed_at: str = Field(default_factory=get_ist_iso)
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.id:
+            self.id = hashlib.md5(self.sheet_row_hash.encode("utf-8")).hexdigest()
 
 
 class RadarAlertLog(BaseModel):

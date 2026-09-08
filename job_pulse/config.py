@@ -63,4 +63,12 @@ DEFAULT_GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID",
 DEFAULT_GOOGLE_SHEETS_CREDS_PATH = os.getenv("GOOGLE_SHEETS_CREDS_PATH", "")
 DEFAULT_GOOGLE_SHEETS_CREDENTIALS_JSON = os.getenv("GOOGLE_SHEETS_CREDENTIALS_JSON", "")
 
+# Automated Company Discovery: "cMPLi Dip Stories" source sheet
+STORY_INGESTION_ENABLED = os.getenv("STORY_INGESTION_ENABLED", "false").lower() in ("true", "1", "yes")
+STORY_SHEET_ID = os.getenv("STORY_SHEET_ID", "1LUO0XD1r8NgXTvry8BraCGqoirIvS8zVJPlIiXMauZA")
+STORY_SHEET_NAME = os.getenv("STORY_SHEET_NAME", "cMPLi Dip Stories")
+STORY_MAIN_COMPANY_COL = int(os.getenv("STORY_MAIN_COMPANY_COL", "8"))  # Column I (0-indexed)
+STORY_COMPETITORS_COL = int(os.getenv("STORY_COMPETITORS_COL", "9"))  # Column J (0-indexed)
+STORY_INGESTION_INTERVAL_MINUTES = int(os.getenv("STORY_INGESTION_INTERVAL_MINUTES", "360"))  # every 6h, Mon-Sat cadence
+
 

@@ -124,6 +124,42 @@ class GoogleSheetsManager:
         return client, spreadsheet
 
     @classmethod
+    def read_worksheet_rows(
+        cls,
+        config: Dict[str, Any],
+        spreadsheet_id: str,
+        sheet_name: str,
+    ) -> List[List[str]]:
+        """
+        Read all raw rows (including the header row) from an arbitrary worksheet, using
+        the same service-account credentials as job/post sync but a different, explicit
+        spreadsheet ID - for reading external source sheets (e.g. a news-story sheet)
+        rather than the app's own configured sync target.
+        """
+        if not GSPREAD_AVAILABLE:
+            raise RuntimeError("gspread or google-auth package is not installed.")
+
+        creds_data = config.get("credentials_json", "").strip()
+        if not creds_data:
+            raise ValueError("Google Service Account credentials (JSON or file path) are missing.")
+
+        creds_path = Path(creds_data)
+        if creds_path.exists() and creds_path.is_file():
+            creds_obj = Credentials.from_service_account_file(str(creds_path), scopes=cls.SCOPES)
+        else:
+            try:
+                info = json.loads(creds_data)
+                creds_obj = Credentials.from_service_account_info(info, scopes=cls.SCOPES)
+            except json.JSONDecodeError:
+                raise ValueError("Credentials must be a valid JSON string or existing file path.")
+
+        client = gspread.authorize(creds_obj)
+        sheet_id = cls.extract_spreadsheet_id(spreadsheet_id)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.worksheet(sheet_name)
+        return worksheet.get_all_values()
+
+    @classmethod
     def test_connection(cls, config: Dict[str, Any]) -> Tuple[bool, str]:
         """Test authentication and spreadsheet accessibility."""
         try:

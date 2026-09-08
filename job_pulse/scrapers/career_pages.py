@@ -3,12 +3,31 @@ import logging
 import json
 import re
 from urllib.parse import urlparse, urljoin
+import ipaddress
+import socket
 from typing import List, Optional
 from bs4 import BeautifulSoup
 from job_pulse.models import JobPost, SearchQuery, ScrapeResult, WorkMode
 from job_pulse.scrapers.base import BaseScraper
 
 logger = logging.getLogger("job_pulse.scraper.career_page")
+
+
+def _is_safe_url(url: str) -> bool:
+    """Validate that the URL has an http(s) scheme and does not resolve to private/internal IPs (SSRF protection)."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
+        hostname_clean = parsed.hostname.lower().strip()
+        if hostname_clean in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            return False
+        ip = ipaddress.ip_address(socket.gethostbyname(hostname_clean))
+        return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+    except Exception:
+        return False
 
 
 class CareerPageScraper(BaseScraper):
@@ -66,6 +85,10 @@ class CareerPageScraper(BaseScraper):
 
     def scrape_url(self, url: str, keyword_filter: str = "", company_override: str = "") -> List[JobPost]:
         """Auto-detect ATS or fall back to verified generic career crawler."""
+        if not _is_safe_url(url):
+            logger.warning(f"Blocked unsafe/internal/loopback URL from career scraping: '{url}'")
+            return []
+
         url_lower = url.lower()
 
         if "amazon.jobs" in url_lower:
@@ -395,7 +418,9 @@ class CareerPageScraper(BaseScraper):
                 # Avoid mailto or anchor jump
                 if not href.startswith("#") and not href.startswith("mailto:"):
                     resolved = urljoin(url, href)
-                    if resolved.rstrip("/").lower() != url_low:
+                    # Re-validate resolved URL against SSRF (internal/loopback/metadata endpoints)
+                    # Note: DNS rebinding can be further mitigated with IP pinning if required.
+                    if resolved.rstrip("/").lower() != url_low and _is_safe_url(resolved):
                         return resolved
 
         return None
@@ -409,8 +434,8 @@ class CareerPageScraper(BaseScraper):
         
         # 1. Resolve career URL if a generic homepage was passed
         target_url = self._resolve_career_url(url)
-        if not target_url:
-            logger.info(f"No dedicated careers portal found for '{url}'. Skipping homepage crawl to prevent capturing retail/product links.")
+        if not target_url or not _is_safe_url(target_url):
+            logger.info(f"No dedicated or safe careers portal found for '{url}'. Skipping homepage crawl.")
             return jobs
 
         soup = self.client.get_soup(target_url)

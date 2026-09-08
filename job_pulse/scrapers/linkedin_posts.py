@@ -109,7 +109,7 @@ class LinkedInPostsScraper(BaseScraper):
 
                     # Extract phone / whatsapp
                     contact_phone = None
-                    m_phone = re.search(r"(?:\+91[\-\s]?)?[6-9]\d{9}", snippet_text)
+                    m_phone = re.search(r"(?<!\d)(?:\+91[\-\s]?)?[6-9]\d{9}(?!\d)", snippet_text)
                     if m_phone:
                         contact_phone = m_phone.group(0)
 

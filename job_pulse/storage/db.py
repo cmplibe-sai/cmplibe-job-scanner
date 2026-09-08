@@ -44,7 +44,9 @@ class JobDatabase:
 
     @contextmanager
     def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -230,8 +232,17 @@ class JobDatabase:
             cursor.execute("SELECT id FROM users WHERE username = 'admin'")
             if not cursor.fetchone():
                 import os
+                import secrets
                 from job_pulse.security import hash_password
-                default_pwd = os.environ.get("ADMIN_PASSWORD", "cmplibe@2026")
+                default_pwd = os.environ.get("ADMIN_PASSWORD")
+                if not default_pwd:
+                    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"):
+                        default_pwd = "cmplibe@2026"
+                    else:
+                        default_pwd = secrets.token_urlsafe(16)
+                        logger.warning(f"ADMIN_PASSWORD not set in environment. Generated one-time admin password: {default_pwd}")
+                else:
+                    logger.info("Initializing default admin user with configured ADMIN_PASSWORD.")
                 p_hash, salt = hash_password(default_pwd)
                 cursor.execute(
                     "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)",

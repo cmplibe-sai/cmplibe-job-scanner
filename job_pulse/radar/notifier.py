@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
+from html import escape
 
 logger = logging.getLogger("job_pulse.radar.notifier")
 
@@ -367,14 +368,14 @@ class RadarEmailNotifier:
         # Build Job Cards HTML
         jobs_html = ""
         for idx, job in enumerate(valid_jobs[:35], start=1):
-            title = job.get("title") or "Position"
-            company = job.get("company") or company_name
-            portal = job.get("source_portal") or "Career Page"
-            loc_mode_text = cls._format_location_and_mode(job)
-            exp_badge = job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")
-            sal_text = job.get("salary_text")
+            title = escape(str(job.get("title") or "Position"))
+            company = escape(str(job.get("company") or company_name))
+            portal = escape(str(job.get("source_portal") or "Career Page"))
+            loc_mode_text = escape(str(cls._format_location_and_mode(job)))
+            exp_badge = escape(str(job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")))
+            sal_text = escape(str(job.get("salary_text") or ""))
             role_type = "💻 Technical" if str(job.get("role_type", "")).lower() in ["technical", "roletype.technical"] else "👔 Non-Technical"
-            url = job.get("url") or "#"
+            url = escape(str(job.get("url") or "#"))
 
             sal_badge = f'<span style="display: inline-block; background: #1e293b; color: #fbbf24; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">💰 {sal_text}</span>' if sal_text and sal_text != "Not Disclosed" else ''
 
@@ -409,12 +410,12 @@ class RadarEmailNotifier:
         # Build Recruiter Posts HTML
         posts_html = ""
         for post in valid_posts[:15]:
-            poster = post.get("poster_name") or "HR / Recruiter"
-            comp = post.get("company") or company_name
-            role = post.get("role_title") or "Hiring Opportunity"
-            snippet = (post.get("post_text") or "")[:240] + ("..." if len(post.get("post_text") or "") > 240 else "")
-            post_url = post.get("post_url") or "#"
-            contact = post.get("contact_email") or post.get("contact_phone") or "Direct on LinkedIn"
+            poster = escape(str(post.get("poster_name") or "HR / Recruiter"))
+            comp = escape(str(post.get("company") or company_name))
+            role = escape(str(post.get("role_title") or "Hiring Opportunity"))
+            snippet = escape((post.get("post_text") or "")[:240] + ("..." if len(post.get("post_text") or "") > 240 else ""))
+            post_url = escape(str(post.get("post_url") or "#"))
+            contact = escape(str(post.get("contact_email") or post.get("contact_phone") or "Direct on LinkedIn"))
 
             posts_html += f"""
             <div style="background: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid #0ea5e9;">
@@ -511,14 +512,14 @@ class RadarEmailNotifier:
         # Build Job Cards HTML
         jobs_html = ""
         for job in valid_jobs[:35]:  # Send up to top 35 in email digest with direct links
-            title = job.get("title") or "Position"
-            company = job.get("company") or "Company"
-            portal = job.get("source_portal") or "Job Portal"
-            loc_mode_text = cls._format_location_and_mode(job)
-            exp_badge = job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")
-            sal_text = job.get("salary_text")
+            title = escape(str(job.get("title") or "Position"))
+            company = escape(str(job.get("company") or "Company"))
+            portal = escape(str(job.get("source_portal") or "Job Portal"))
+            loc_mode_text = escape(str(cls._format_location_and_mode(job)))
+            exp_badge = escape(str(job.get("experience_text") or ("🎓 Internship / Fresher" if job.get("is_internship") else "⚡ All Experience Levels")))
+            sal_text = escape(str(job.get("salary_text") or ""))
             role_type = "💻 Technical" if str(job.get("role_type", "")).lower() in ["technical", "roletype.technical"] else "👔 Non-Technical"
-            url = job.get("url") or "#"
+            url = escape(str(job.get("url") or "#"))
 
             sal_badge = f'<span style="display: inline-block; background: #1e293b; color: #fbbf24; padding: 3px 8px; border-radius: 4px; font-size: 11px; margin: 2px 5px 2px 0; vertical-align: middle;">💰 {sal_text}</span>' if sal_text and sal_text != "Not Disclosed" else ''
 
@@ -550,12 +551,12 @@ class RadarEmailNotifier:
         # Build Recruiter Posts HTML
         posts_html = ""
         for post in valid_posts[:15]:
-            poster = post.get("poster_name") or "HR / Recruiter"
-            company = post.get("company") or "Organization"
-            role = post.get("role_title") or "Hiring Opportunity"
-            snippet = (post.get("post_text") or "")[:240] + ("..." if len(post.get("post_text") or "") > 240 else "")
-            post_url = post.get("post_url") or "#"
-            contact = post.get("contact_email") or post.get("contact_phone") or "Direct on LinkedIn"
+            poster = escape(str(post.get("poster_name") or "HR / Recruiter"))
+            company = escape(str(post.get("company") or "Organization"))
+            role = escape(str(post.get("role_title") or "Hiring Opportunity"))
+            snippet = escape((post.get("post_text") or "")[:240] + ("..." if len(post.get("post_text") or "") > 240 else ""))
+            post_url = escape(str(post.get("post_url") or "#"))
+            contact = escape(str(post.get("contact_email") or post.get("contact_phone") or "Direct on LinkedIn"))
 
             posts_html += f"""
             <div style="background: #0f172a; border: 1px solid #475569; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; border-left: 4px solid #ec4899;">

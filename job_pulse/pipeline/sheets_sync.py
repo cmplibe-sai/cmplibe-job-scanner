@@ -1,4 +1,5 @@
 import re
+import time
 import json
 import logging
 from pathlib import Path
@@ -23,6 +24,22 @@ class GoogleSheetsManager:
     Supports Google Cloud Service Account authentication & Webhook syncing with automated
     worksheet initialization, deduplication by Job ID, and structured formatting.
     """
+
+    @classmethod
+    def _api_call_with_retry(cls, fn, *args, max_retries: int = 4, **kwargs):
+        """Execute a Google Sheets / gspread call with exponential backoff on 429/RESOURCE_EXHAUSTED."""
+        for attempt in range(max_retries):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as e:
+                err_str = str(e).upper()
+                if any(term in err_str for term in ["429", "RESOURCE_EXHAUSTED", "RATE_LIMIT", "QUOTA"]):
+                    if attempt < max_retries - 1:
+                        wait = (2 ** attempt) * 1.5 + 0.5
+                        logger.warning(f"Google Sheets API rate-limited ({e}). Retrying in {wait:.1f}s (Attempt {attempt+1}/{max_retries})...")
+                        time.sleep(wait)
+                        continue
+                raise
 
     SCOPES = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -243,8 +260,8 @@ class GoogleSheetsManager:
             target_sheet_name = sheet_name or config.get("sheet_name_all_india", "All-India Jobs")
             worksheet = cls._get_or_create_worksheet(spreadsheet, target_sheet_name, cls.JOB_HEADERS)
 
-            # Get existing Job IDs in Column A (Row 2 onwards)
-            col_a_values = worksheet.col_values(1)
+            # Get existing Job IDs in Column A (Row 2 onwards) with retry
+            col_a_values = cls._api_call_with_retry(worksheet.col_values, 1)
             existing_ids = set(col_a_values[1:]) if len(col_a_values) > 1 else set()
 
             new_rows = []
@@ -260,8 +277,8 @@ class GoogleSheetsManager:
             if not new_rows:
                 return True, 0, f"All {len(jobs)} jobs already exist or are filtered in sheet '{target_sheet_name}'."
 
-            # Batch append new rows
-            worksheet.append_rows(new_rows, value_input_option="USER_ENTERED")
+            # Batch append new rows with retry
+            cls._api_call_with_retry(worksheet.append_rows, new_rows, value_input_option="USER_ENTERED")
             logger.info(f"Successfully appended {len(new_rows)} new job rows to Google Sheet '{target_sheet_name}'")
             return True, len(new_rows), f"Successfully synced {len(new_rows)} new opportunities to Google Sheet."
 
@@ -285,7 +302,7 @@ class GoogleSheetsManager:
             target_sheet_name = sheet_name or config.get("sheet_name_hiring_posts", "Recruiter Posts")
             worksheet = cls._get_or_create_worksheet(spreadsheet, target_sheet_name, cls.POST_HEADERS)
 
-            col_a_values = worksheet.col_values(1)
+            col_a_values = cls._api_call_with_retry(worksheet.col_values, 1)
             existing_ids = set(col_a_values[1:]) if len(col_a_values) > 1 else set()
 
             new_rows = []
@@ -298,7 +315,7 @@ class GoogleSheetsManager:
             if not new_rows:
                 return True, 0, f"All {len(posts)} recruiter posts already exist in sheet '{target_sheet_name}'."
 
-            worksheet.append_rows(new_rows, value_input_option="USER_ENTERED")
+            cls._api_call_with_retry(worksheet.append_rows, new_rows, value_input_option="USER_ENTERED")
             logger.info(f"Successfully appended {len(new_rows)} new recruiter post rows to Google Sheet '{target_sheet_name}'")
             return True, len(new_rows), f"Successfully synced {len(new_rows)} recruiter posts to Google Sheet."
 
@@ -333,17 +350,32 @@ class GoogleSheetsManager:
                 except Exception:
                     continue
 
-                all_rows = ws.get_all_values()
+                all_rows = cls._api_call_with_retry(ws.get_all_values)
                 if not all_rows or len(all_rows) <= 1:
                     continue
+
+                header = all_rows[0] if all_rows[0] else cls.JOB_HEADERS
+                header_lower = [str(h).lower().strip() for h in header]
+
+                # Dynamically resolve column indices
+                title_idx = 1
+                company_idx = 2
+                url_idx = 11
+                for idx, col_name in enumerate(header_lower):
+                    if col_name in ("job title", "role title", "title"):
+                        title_idx = idx
+                    elif col_name in ("company", "company name", "recruiter / company"):
+                        company_idx = idx
+                    elif any(k in col_name for k in ["link", "url"]):
+                        url_idx = idx
 
                 valid_rows = []
                 for row in all_rows[1:]:
                     if len(row) < 2:
                         continue
-                    title = row[1].strip() if len(row) > 1 else ""
-                    company = row[2].strip() if len(row) > 2 else ""
-                    url = row[11].strip() if len(row) > 11 else ""
+                    title = row[title_idx].strip() if len(row) > title_idx else ""
+                    company = row[company_idx].strip() if len(row) > company_idx else ""
+                    url = row[url_idx].strip() if len(row) > url_idx else ""
                     
                     if is_valid_job_listing(title=title, url=url, company=company):
                         valid_rows.append(row)
@@ -351,9 +383,8 @@ class GoogleSheetsManager:
                         total_purged += 1
 
                 if len(valid_rows) != len(all_rows) - 1:
-                    ws.clear()
-                    header = all_rows[0] if all_rows[0] else cls.JOB_HEADERS
-                    ws.append_rows([header] + valid_rows, value_input_option="USER_ENTERED")
+                    cls._api_call_with_retry(ws.clear)
+                    cls._api_call_with_retry(ws.append_rows, [header] + valid_rows, value_input_option="USER_ENTERED")
                     try:
                         ws.freeze(rows=1)
                     except Exception:

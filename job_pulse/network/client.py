@@ -133,11 +133,20 @@ class StealthClient:
                 )
                 if response.status_code in (200, 201):
                     return response
+                elif response.status_code in (403, 429):
+                    wait_time = (DEFAULT_RETRY_BACKOFF ** attempt) + random.uniform(1.0, 3.0)
+                    logger.warning(
+                        f"Rate limit / Bot check [{response.status_code}] on POST {url}. Retrying in {wait_time:.1f}s (Attempt {attempt}/{max_retries})"
+                    )
+                    req_headers["User-Agent"] = random.choice(USER_AGENTS)
+                    time.sleep(wait_time)
                 else:
                     logger.warning(f"HTTP {response.status_code} for POST {url}")
                     return response
             except Exception as e:
-                time.sleep(DEFAULT_RETRY_BACKOFF ** attempt)
+                wait_time = (DEFAULT_RETRY_BACKOFF ** attempt) + random.uniform(0.5, 1.5)
+                logger.warning(f"POST error on {url}: {e}. Retrying in {wait_time:.1f}s...")
+                time.sleep(wait_time)
         return None
 
     def get_soup(self, url: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Optional[BeautifulSoup]:

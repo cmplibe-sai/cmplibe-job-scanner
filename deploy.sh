@@ -58,7 +58,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/var/www/cmplibe-job-scanner
-ExecStart=/var/www/cmplibe-job-scanner/venv/bin/python -m uvicorn job_pulse.server:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/var/www/cmplibe-job-scanner/venv/bin/python -m uvicorn job_pulse.server:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1

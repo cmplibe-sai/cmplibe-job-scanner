@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Response, Depends
@@ -7,12 +8,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from job_pulse.models import SearchQuery, CompanyTarget, RadarAlertLog, DiscoveryAlertLog, EmailConfig, GoogleSheetsConfig
+from job_pulse.models import SearchQuery, CompanyTarget, RadarAlertLog, DiscoveryAlertLog, EmailConfig, GoogleSheetsConfig, JobPost
 from job_pulse.orchestrator import ScraperOrchestrator
 from job_pulse.storage.db import JobDatabase
 from job_pulse.pipeline.exporter import JobExporter
+from job_pulse.pipeline.deduplicator import JobDeduplicator
 from job_pulse.pipeline.sheets_sync import GoogleSheetsManager
 from job_pulse.scrapers.career_pages import CareerPageScraper
+from job_pulse.scrapers.linkedin import LinkedInScraper
+from job_pulse.scrapers.internshala import InternshalaScraper
+from job_pulse.scrapers.unstop import UnstopScraper
+from job_pulse.scrapers.shine import ShineScraper
 from job_pulse.radar.scanner import CompanyRadarScanner
 from job_pulse.radar.discovery_scanner import AllIndiaDiscoveryScanner
 from job_pulse.radar.notifier import RadarEmailNotifier
@@ -21,6 +27,8 @@ from job_pulse.security import create_session, validate_session, revoke_session
 from job_pulse.config import DATA_DIR
 from job_pulse.ai.bee_assistant import BeeAssistant
 
+logger = logging.getLogger("job_pulse.server")
+
 root_path = os.getenv("ROOT_PATH", "").rstrip("/")
 app = FastAPI(
     title="cMPLiBe's AIScanner API",
@@ -28,14 +36,32 @@ app = FastAPI(
     root_path=root_path,
 )
 
+raw_allowed_origins = os.getenv("ALLOWED_ORIGINS", "")
+if raw_allowed_origins.strip():
+    allowed_origins = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "https://www.cmplibe.com",
+        "https://cmplibe.com",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Login attempt rate limiting tracker: IP/User -> [timestamps]
+_LOGIN_FAILURES: dict[str, list[float]] = {}
+MAX_LOGIN_FAILURES = 8
+LOCKOUT_WINDOW_SECONDS = 900  # 15 minutes
+IS_SECURE_COOKIE = os.getenv("SECURE_COOKIES", "false").lower() in ("true", "1") or os.getenv("ENVIRONMENT") == "production"
 
 db = JobDatabase()
 orchestrator = ScraperOrchestrator(db=db)
@@ -105,11 +131,42 @@ def require_admin(request: Request, user: str = Depends(get_current_user)) -> st
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest, response: Response):
-    """Authenticate team member and establish session cookie."""
+def login(req: LoginRequest, request: Request, response: Response):
+    """Authenticate team member and establish session cookie with brute-force protection."""
+    import time
+    real_ip = request.headers.get("x-real-ip")
+    forwarded = request.headers.get("x-forwarded-for")
+    if real_ip:
+        client_ip = real_ip.strip()
+    elif forwarded:
+        # Behind reverse proxy (nginx $proxy_add_x_forwarded_for), the trustworthy IP
+        # is the rightmost entry appended by the proxy, not the attacker-spoofed first entry.
+        client_ip = forwarded.split(",")[-1].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{req.username.strip().lower()}"
+    now = time.time()
+
+    # Clean old failure entries
+    recent_failures = [t for t in _LOGIN_FAILURES.get(rate_key, []) if now - t < LOCKOUT_WINDOW_SECONDS]
+    if recent_failures:
+        _LOGIN_FAILURES[rate_key] = recent_failures
+    else:
+        _LOGIN_FAILURES.pop(rate_key, None)
+
+    if len(recent_failures) >= MAX_LOGIN_FAILURES:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Account temporarily locked for 15 minutes for security."
+        )
+
     user_info = db.verify_user_credentials(req.username, req.password)
     if not user_info:
+        _LOGIN_FAILURES.setdefault(rate_key, []).append(now)
         raise HTTPException(status_code=401, detail="Invalid username or password, or account is disabled.")
+
+    # Successful login: clear failure tracker
+    _LOGIN_FAILURES.pop(rate_key, None)
 
     username = user_info["username"]
     role = user_info.get("role", "member")
@@ -122,7 +179,7 @@ def login(req: LoginRequest, response: Response):
         max_age=7 * 24 * 3600,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=IS_SECURE_COOKIE,
     )
     return {
         "success": True,

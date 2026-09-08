@@ -58,7 +58,7 @@ class BaseScraper(ABC):
         if not text or any(k in text.lower() for k in ["not disclosed", "confidential", "best in industry"]):
             return None, None, None, text
         
-        currency = "INR" if any(c in text for c in ["₹", "INR", "Lacs", "PA", "LPA", "Cr"]) else "USD" if "$" in text else "EUR" if "€" in text else "GBP" if "£" in text else None
+        currency = "INR" if re.search(r"₹|\bINR\b|\bLacs?\b|\bLPA\b|\bper\s*annum\b|\bCr\b|(?<=\d)\s*P\.?A\.?\b", text, re.IGNORECASE) else "USD" if "$" in text else "EUR" if "€" in text else "GBP" if "£" in text else None
         
         # Check LPA (e.g. 5-10 LPA, 15 - 25 Lacs PA)
         lpa_match = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(?:lpa|lac|lakh)", text, re.IGNORECASE)

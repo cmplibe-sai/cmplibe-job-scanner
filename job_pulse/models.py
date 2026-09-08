@@ -75,6 +75,8 @@ def classify_role_type(title: str, skills: List[str] = None) -> RoleType:
         if any(re.search(rf"\b{re.escape(k)}\b", skills_text) for k in TECH_KEYWORDS):
             return RoleType.TECHNICAL
             
+    return RoleType.NON_TECHNICAL
+
 def is_valid_job_listing(title: str, url: str = "", company: str = "", target_company: str = "") -> bool:
     """
     Universal, ultra-strict gatekeeper to ensure an item is a genuine, actionable employment opening.
@@ -313,13 +315,13 @@ class JobPost(BaseModel):
         self.role_type = classify_role_type(self.title, self.skills)
         
         # Auto detect internship / fresher signals
-        check_str = f"{self.title} {self.experience_text or ''} {self.description or ''[:200]}".lower()
+        check_str = f"{self.title} {self.experience_text or ''} {(self.description or '')[:200]}".lower()
         if any(term in check_str for term in ["intern", "internship", "trainee", "fresher", "apprentice", "graduate engineer trainee", "campus"]):
             self.is_internship = True
 
         # Extract numeric experience if not already set
         if self.experience_min is None or self.experience_max is None:
-            text_to_search = f"{self.experience_text or ''} {self.title} {self.description or ''[:300]}"
+            text_to_search = f"{self.experience_text or ''} {self.title} {(self.description or '')[:300]}"
             # Match patterns like "3-5 Yrs", "2 to 6 years", "0-1 yr"
             m_range = re.search(r"(\d+)\s*(?:-|to)\s*(\d+)\s*(?:yrs?|years?|yoe)", text_to_search, re.IGNORECASE)
             if m_range:
@@ -363,7 +365,7 @@ class HiringPost(BaseModel):
             if m:
                 self.contact_email = m.group(0)
         if not self.contact_phone and self.post_text:
-            m_phone = re.search(r"(?:\+91[\-\s]?)?[6-9]\d{9}", self.post_text)
+            m_phone = re.search(r"(?<!\d)(?:\+91[\-\s]?)?[6-9]\d{9}(?!\d)", self.post_text)
             if m_phone:
                 self.contact_phone = m_phone.group(0)
 

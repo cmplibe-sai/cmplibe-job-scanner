@@ -1,6 +1,7 @@
 import logging
 import time
 import re
+import threading
 from typing import List, Dict, Any, Optional
 from job_pulse.models import CompanyTarget, JobPost, HiringPost, SearchQuery, RadarAlertLog
 from job_pulse.storage.db import JobDatabase
@@ -78,9 +79,14 @@ class CompanyRadarScanner:
         self.unstop_scraper = UnstopScraper()
         self.shine_scraper = ShineScraper()
         self.posts_scraper = LinkedInPostsScraper()
+        self._lock = threading.Lock()
 
     def scan_target(self, target: CompanyTarget, send_email: bool = True) -> Dict[str, Any]:
         """Scan a single company across multiple channels and email new delta opportunities."""
+        with self._lock:
+            return self._scan_target_impl(target, send_email=send_email)
+
+    def _scan_target_impl(self, target: CompanyTarget, send_email: bool = True) -> Dict[str, Any]:
         c_name = target.company_name.strip()
         logger.info(f"Starting Radar scan for target company: {c_name}")
         

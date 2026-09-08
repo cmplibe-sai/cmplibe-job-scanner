@@ -95,9 +95,10 @@ class PostgresJobRepository(JobRepository):
     # ==========================================
 
     def _init_db(self, init_default_targets: bool = False) -> None:
-        with self._get_conn() as conn:
-            cursor = self._cursor(conn)
-            cursor.execute(
+        try:
+            with self._get_conn() as conn:
+                cursor = self._cursor(conn)
+                cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
@@ -308,6 +309,9 @@ class PostgresJobRepository(JobRepository):
                             """,
                             (tid, name, normalize_company_key(name), url, kw, psycopg2.extras.Json(ch), now_str),
                         )
+        except psycopg2.IntegrityError:
+            # Catalog race condition on concurrent worker startup - tables already exist
+            pass
 
     # ==========================================
     # Jobs

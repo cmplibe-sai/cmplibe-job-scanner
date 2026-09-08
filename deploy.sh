@@ -62,6 +62,7 @@ ExecStart=/var/www/cmplibe-job-scanner/venv/bin/python -m uvicorn job_pulse.serv
 Restart=always
 RestartSec=5s
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/var/www/cmplibe-job-scanner/.env
 
 [Install]
 WantedBy=multi-user.target

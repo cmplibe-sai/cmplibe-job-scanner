@@ -320,4 +320,49 @@ def test_all_india_discovery_scanner_run(temp_db):
     assert res["new_posts_emailed"] == 1
 
 
+def test_scheduled_discovery_scan_stays_silent_with_zero_new_deltas(temp_db):
+    """
+    Regression test: a scheduled scan (is_on_demand=False, the scheduler's default)
+    must NOT fall back to re-sending previously-alerted opportunities when there is
+    nothing new - otherwise every scheduled cycle re-emails the same top N jobs
+    indefinitely. An on-demand scan (manual trigger from the UI) is allowed to.
+    """
+    from unittest.mock import MagicMock
+    from job_pulse.radar.discovery_scanner import AllIndiaDiscoveryScanner
+    from job_pulse.models import DiscoveryAlertLog
+
+    scrape_result = {
+        "total_scraped": 1, "unique_jobs": 1, "new_stored": 0, "total_hiring_posts": 0,
+        "execution_time_seconds": 0.5,
+        "jobs": [{
+            "id": "job_already_sent", "title": "Software Engineer", "company": "Swiggy",
+            "location": "Bangalore", "url": "https://jobs.lever.co/swiggy/1",
+            "source_portal": "LinkedIn", "role_type": "Technical",
+        }],
+        "hiring_posts": [],
+        "portal_results": {},
+    }
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.run.return_value = scrape_result
+
+    # Mark the only job as already alerted to this recipient, so the delta is empty.
+    temp_db.save_email_config({"all_india_recipient": "allindia.alerts@cmplibe.com", "all_india_is_enabled": True})
+    temp_db.save_discovery_alert_log(DiscoveryAlertLog(
+        item_type="job", item_id="job_already_sent", title="Software Engineer",
+        company="Swiggy", url="https://jobs.lever.co/swiggy/1", source="LinkedIn",
+        recipient_email="allindia.alerts@cmplibe.com",
+    ))
+
+    scanner = AllIndiaDiscoveryScanner(db=temp_db, orchestrator=mock_orchestrator)
+
+    # Scheduled scan (is_on_demand defaults to False): must stay silent.
+    scheduled_res = scanner.scan_all_india(send_email=True, sync_sheets=False)
+    assert scheduled_res["new_jobs_emailed"] == 0
+    assert "No new" in scheduled_res["email_status"]
+
+    # On-demand scan: allowed to fall back to re-sending the top opportunities.
+    on_demand_res = scanner.scan_all_india(send_email=True, sync_sheets=False, is_on_demand=True)
+    assert on_demand_res["new_jobs_emailed"] == 1
+
+
 

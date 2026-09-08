@@ -94,224 +94,237 @@ class PostgresJobRepository(JobRepository):
     # Schema initialization
     # ==========================================
 
-    def _init_db(self, init_default_targets: bool = False) -> None:
+    def _init_db(self, init_default_targets: bool = False, _retry: bool = True) -> None:
         try:
             with self._get_conn() as conn:
                 cursor = self._cursor(conn)
                 cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS jobs (
-                    id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    company TEXT NOT NULL,
-                    location TEXT,
-                    work_mode TEXT,
-                    role_type TEXT DEFAULT 'Non-Technical',
-                    is_internship BOOLEAN DEFAULT FALSE,
-                    category TEXT DEFAULT 'General',
-                    experience_min DOUBLE PRECISION,
-                    experience_max DOUBLE PRECISION,
-                    experience_text TEXT,
-                    salary_min DOUBLE PRECISION,
-                    salary_max DOUBLE PRECISION,
-                    salary_currency TEXT,
-                    salary_text TEXT,
-                    skills JSONB DEFAULT '[]'::jsonb,
-                    description TEXT,
-                    url TEXT NOT NULL,
-                    source_portal TEXT NOT NULL,
-                    posted_date TEXT,
-                    scraped_at TEXT NOT NULL,
-                    dedup_group_id TEXT,
-                    is_favorite BOOLEAN DEFAULT FALSE,
-                    status TEXT DEFAULT 'new',
-                    raw_data JSONB
+                    """
+                    CREATE TABLE IF NOT EXISTS jobs (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        company TEXT NOT NULL,
+                        location TEXT,
+                        work_mode TEXT,
+                        role_type TEXT DEFAULT 'Non-Technical',
+                        is_internship BOOLEAN DEFAULT FALSE,
+                        category TEXT DEFAULT 'General',
+                        experience_min DOUBLE PRECISION,
+                        experience_max DOUBLE PRECISION,
+                        experience_text TEXT,
+                        salary_min DOUBLE PRECISION,
+                        salary_max DOUBLE PRECISION,
+                        salary_currency TEXT,
+                        salary_text TEXT,
+                        skills JSONB DEFAULT '[]'::jsonb,
+                        description TEXT,
+                        url TEXT NOT NULL,
+                        source_portal TEXT NOT NULL,
+                        posted_date TEXT,
+                        scraped_at TEXT NOT NULL,
+                        dedup_group_id TEXT,
+                        is_favorite BOOLEAN DEFAULT FALSE,
+                        status TEXT DEFAULT 'new',
+                        raw_data JSONB
+                    )
+                    """
                 )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS hiring_posts (
-                    id TEXT PRIMARY KEY,
-                    poster_name TEXT NOT NULL,
-                    poster_title TEXT,
-                    poster_profile_url TEXT,
-                    company TEXT,
-                    role_title TEXT NOT NULL,
-                    post_text TEXT NOT NULL,
-                    post_url TEXT NOT NULL,
-                    contact_email TEXT,
-                    contact_phone TEXT,
-                    location TEXT,
-                    posted_date TEXT,
-                    scraped_at TEXT NOT NULL,
-                    is_favorite BOOLEAN DEFAULT FALSE,
-                    status TEXT DEFAULT 'new'
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS search_runs (
-                    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    timestamp TEXT NOT NULL,
-                    keywords TEXT NOT NULL,
-                    location TEXT,
-                    portals TEXT,
-                    total_found INTEGER,
-                    execution_time DOUBLE PRECISION
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS company_targets (
-                    id TEXT PRIMARY KEY,
-                    company_name TEXT NOT NULL,
-                    normalized_name TEXT,
-                    career_url TEXT,
-                    keywords TEXT,
-                    channels JSONB DEFAULT '[]'::jsonb,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    source TEXT DEFAULT 'manual',
-                    source_row_id TEXT,
-                    last_scanned_at TEXT,
-                    last_found_count INTEGER DEFAULT 0,
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS radar_alert_logs (
-                    id TEXT PRIMARY KEY,
-                    company_id TEXT NOT NULL,
-                    item_type TEXT DEFAULT 'job',
-                    item_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    company TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    experience_text TEXT,
-                    location TEXT,
-                    emailed_at TEXT NOT NULL,
-                    recipient_email TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS radar_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS discovery_alert_logs (
-                    id TEXT PRIMARY KEY,
-                    item_type TEXT DEFAULT 'job',
-                    item_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    company TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    role_type TEXT DEFAULT 'Non-Technical',
-                    experience_text TEXT,
-                    location TEXT,
-                    emailed_at TEXT NOT NULL,
-                    recipient_email TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sheets_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS story_ingestion_log (
-                    id TEXT PRIMARY KEY,
-                    sheet_row_hash TEXT NOT NULL UNIQUE,
-                    story_date TEXT,
-                    main_company TEXT NOT NULL,
-                    competitors JSONB DEFAULT '[]'::jsonb,
-                    targets_created JSONB DEFAULT '[]'::jsonb,
-                    status TEXT DEFAULT 'processed',
-                    error_message TEXT,
-                    processed_at TEXT NOT NULL
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    salt TEXT NOT NULL,
-                    role TEXT DEFAULT 'member',
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TEXT NOT NULL,
-                    last_login_at TEXT
-                )
-                """
-            )
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_portal ON jobs(source_portal)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_scraped ON jobs(scraped_at)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup ON jobs(dedup_group_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_company ON hiring_posts(company)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_company ON company_targets(company_name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_normalized_name ON company_targets(normalized_name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_radar_item_email ON radar_alert_logs(item_id, recipient_email)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_item_email ON discovery_alert_logs(item_id, recipient_email)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_story_log_hash ON story_ingestion_log(sheet_row_hash)")
-
-            cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-            if not cursor.fetchone():
-                import os
-                import secrets
-                from job_pulse.security import hash_password
-                default_pwd = os.environ.get("ADMIN_PASSWORD")
-                if not default_pwd:
-                    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"):
-                        default_pwd = "cmplibe@2026"
-                    else:
-                        default_pwd = secrets.token_urlsafe(16)
-                        logger.warning(f"ADMIN_PASSWORD not set in environment. Generated one-time admin password: {default_pwd}")
-                p_hash, salt = hash_password(default_pwd)
                 cursor.execute(
-                    "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                    ("admin", p_hash, salt, "admin", True, get_ist_iso()),
+                    """
+                    CREATE TABLE IF NOT EXISTS hiring_posts (
+                        id TEXT PRIMARY KEY,
+                        poster_name TEXT NOT NULL,
+                        poster_title TEXT,
+                        poster_profile_url TEXT,
+                        company TEXT,
+                        role_title TEXT NOT NULL,
+                        post_text TEXT NOT NULL,
+                        post_url TEXT NOT NULL,
+                        contact_email TEXT,
+                        contact_phone TEXT,
+                        location TEXT,
+                        posted_date TEXT,
+                        scraped_at TEXT NOT NULL,
+                        is_favorite BOOLEAN DEFAULT FALSE,
+                        status TEXT DEFAULT 'new'
+                    )
+                    """
                 )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS search_runs (
+                        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                        timestamp TEXT NOT NULL,
+                        keywords TEXT NOT NULL,
+                        location TEXT,
+                        portals TEXT,
+                        total_found INTEGER,
+                        execution_time DOUBLE PRECISION
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS company_targets (
+                        id TEXT PRIMARY KEY,
+                        company_name TEXT NOT NULL,
+                        normalized_name TEXT,
+                        career_url TEXT,
+                        keywords TEXT,
+                        channels JSONB DEFAULT '[]'::jsonb,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        source TEXT DEFAULT 'manual',
+                        source_row_id TEXT,
+                        last_scanned_at TEXT,
+                        last_found_count INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS radar_alert_logs (
+                        id TEXT PRIMARY KEY,
+                        company_id TEXT NOT NULL,
+                        item_type TEXT DEFAULT 'job',
+                        item_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        company TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        experience_text TEXT,
+                        location TEXT,
+                        emailed_at TEXT NOT NULL,
+                        recipient_email TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS radar_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS discovery_alert_logs (
+                        id TEXT PRIMARY KEY,
+                        item_type TEXT DEFAULT 'job',
+                        item_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        company TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        role_type TEXT DEFAULT 'Non-Technical',
+                        experience_text TEXT,
+                        location TEXT,
+                        emailed_at TEXT NOT NULL,
+                        recipient_email TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS sheets_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS story_ingestion_log (
+                        id TEXT PRIMARY KEY,
+                        sheet_row_hash TEXT NOT NULL UNIQUE,
+                        story_date TEXT,
+                        main_company TEXT NOT NULL,
+                        competitors JSONB DEFAULT '[]'::jsonb,
+                        targets_created JSONB DEFAULT '[]'::jsonb,
+                        status TEXT DEFAULT 'processed',
+                        error_message TEXT,
+                        processed_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                        username TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        salt TEXT NOT NULL,
+                        role TEXT DEFAULT 'member',
+                        is_active BOOLEAN DEFAULT TRUE,
+                        created_at TEXT NOT NULL,
+                        last_login_at TEXT
+                    )
+                    """
+                )
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_portal ON jobs(source_portal)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_scraped ON jobs(scraped_at)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup ON jobs(dedup_group_id)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_company ON hiring_posts(company)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_company ON company_targets(company_name)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_targets_normalized_name ON company_targets(normalized_name)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_radar_item_email ON radar_alert_logs(item_id, recipient_email)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_item_email ON discovery_alert_logs(item_id, recipient_email)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_story_log_hash ON story_ingestion_log(sheet_row_hash)")
 
-            if init_default_targets:
-                cursor.execute("SELECT COUNT(*) as cnt FROM company_targets")
-                if cursor.fetchone()["cnt"] == 0:
-                    from job_pulse.models import normalize_company_key
-                    default_targets = [
-                        ("target_jumbotail", "Jumbotail", "https://jumbotail.com/careers", "software, developer, engineer, intern, analyst", ["career_page", "linkedin_posts", "portal"]),
-                        ("target_paytm", "Paytm", "https://paytm.com/careers", "software, engineer, developer, operations, executive", ["career_page", "linkedin_posts", "portal"]),
-                        ("target_khatabook", "Khatabook", "https://khatabook.com/careers", "engineer, developer, product, intern", ["career_page", "linkedin_posts", "portal"]),
-                    ]
-                    now_str = get_ist_iso()
-                    for tid, name, url, kw, ch in default_targets:
-                        cursor.execute(
-                            """
-                            INSERT INTO company_targets (id, company_name, normalized_name, career_url, keywords, channels, is_active, created_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
-                            """,
-                            (tid, name, normalize_company_key(name), url, kw, psycopg2.extras.Json(ch), now_str),
-                        )
-        except psycopg2.IntegrityError:
-            # Catalog race condition on concurrent worker startup - tables already exist
-            pass
+                cursor.execute("SELECT id FROM users WHERE username = 'admin'")
+                if not cursor.fetchone():
+                    import os
+                    import secrets
+                    from job_pulse.security import hash_password
+                    default_pwd = os.environ.get("ADMIN_PASSWORD")
+                    if not default_pwd:
+                        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"):
+                            default_pwd = "cmplibe@2026"
+                        else:
+                            default_pwd = secrets.token_urlsafe(16)
+                            logger.warning(f"ADMIN_PASSWORD not set in environment. Generated one-time admin password: {default_pwd}")
+                    p_hash, salt = hash_password(default_pwd)
+                    cursor.execute(
+                        "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                        ("admin", p_hash, salt, "admin", True, get_ist_iso()),
+                    )
+
+                if init_default_targets:
+                    cursor.execute("SELECT COUNT(*) as cnt FROM company_targets")
+                    if cursor.fetchone()["cnt"] == 0:
+                        from job_pulse.models import normalize_company_key
+                        default_targets = [
+                            ("target_jumbotail", "Jumbotail", "https://jumbotail.com/careers", "software, developer, engineer, intern, analyst", ["career_page", "linkedin_posts", "portal"]),
+                            ("target_paytm", "Paytm", "https://paytm.com/careers", "software, engineer, developer, operations, executive", ["career_page", "linkedin_posts", "portal"]),
+                            ("target_khatabook", "Khatabook", "https://khatabook.com/careers", "engineer, developer, product, intern", ["career_page", "linkedin_posts", "portal"]),
+                        ]
+                        now_str = get_ist_iso()
+                        for tid, name, url, kw, ch in default_targets:
+                            cursor.execute(
+                                """
+                                INSERT INTO company_targets (id, company_name, normalized_name, career_url, keywords, channels, is_active, created_at)
+                                VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s)
+                                """,
+                                (tid, name, normalize_company_key(name), url, kw, psycopg2.extras.Json(ch), now_str),
+                            )
+        except psycopg2.IntegrityError as e:
+            # Postgres catalog race: CREATE TABLE IF NOT EXISTS is not safe against two
+            # concurrent transactions that both fail to see each other's uncommitted DDL
+            # (e.g. a pg_type_typname_nsp_index collision), and the whole block above runs
+            # in one transaction, so the LOSING side rolls back with *nothing* created -
+            # not just the one colliding statement. Retry once: by the time we reconnect,
+            # the winning transaction has committed, so every "IF NOT EXISTS" here is a
+            # true no-op and the retry succeeds cleanly. Never swallow this silently -
+            # if the retry also fails, something other than a startup race is wrong.
+            logger.warning(f"Postgres schema init hit a catalog race on concurrent startup: {e}")
+            if _retry:
+                time.sleep(0.5)
+                self._init_db(init_default_targets=init_default_targets, _retry=False)
+            else:
+                logger.error("Postgres schema init failed again after retry - not a transient startup race.")
+                raise
 
     # ==========================================
     # Jobs

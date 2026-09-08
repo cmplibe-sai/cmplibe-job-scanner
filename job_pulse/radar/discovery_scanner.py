@@ -29,6 +29,7 @@ class AllIndiaDiscoveryScanner:
         limit_per_portal: int = 35,
         send_email: bool = True,
         sync_sheets: bool = True,
+        is_on_demand: bool = False,
     ) -> Dict[str, Any]:
         """
         Execute broad All-India scan across portals, filter deltas, dispatch email alert,
@@ -77,14 +78,18 @@ class AllIndiaDiscoveryScanner:
             new_posts_to_email = all_posts
 
         # 2. Email Dispatch
-        # If delta detected 0 new because of prior runs, but user requested on-demand scan, send top active opportunities
-        if not new_jobs_to_email and not new_posts_to_email and (all_jobs or all_posts):
+        # If delta detected 0 new, only take top active opportunities for an explicit
+        # on-demand scan - a scheduled scan with 0 new jobs must stay silent, otherwise
+        # it re-sends the same top N opportunities on every scheduled cycle indefinitely.
+        if is_on_demand and not new_jobs_to_email and not new_posts_to_email and (all_jobs or all_posts):
             new_jobs_to_email = all_jobs[:25]
             new_posts_to_email = all_posts[:15]
 
-        email_status = "No recipient email configured for All-India alerts."
+        email_status = "No new discovery delta opportunities to email"
+        if not recipient:
+            email_status = "No recipient email configured for All-India alerts."
         if send_email and recipient and (new_jobs_to_email or new_posts_to_email):
-            if email_config.get("all_india_is_enabled", False) or send_email:
+            if email_config.get("all_india_is_enabled", False) or is_on_demand:
                 success, msg = RadarEmailNotifier.send_all_india_alert(
                     new_jobs=new_jobs_to_email,
                     new_posts=new_posts_to_email,

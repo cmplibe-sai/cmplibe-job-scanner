@@ -761,6 +761,7 @@ def trigger_discovery_scan(req: DiscoveryScanRequest, background_tasks: Backgrou
             experience_level=req.experience_level,
             send_email=req.send_email,
             sync_sheets=req.sync_sheets,
+            is_on_demand=True,
         )
 
     background_tasks.add_task(_run_discovery)

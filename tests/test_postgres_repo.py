@@ -97,3 +97,71 @@ def test_postgres_repository_requires_database_url():
     from job_pulse.storage.postgres_repo import PostgresJobRepository
     with pytest.raises(ValueError):
         PostgresJobRepository(database_url="")
+
+
+@patch("job_pulse.storage.postgres_repo.time.sleep")  # skip the real 0.5s backoff in tests
+@patch("job_pulse.storage.postgres_repo.psycopg2.pool.ThreadedConnectionPool")
+def test_init_db_retries_once_and_succeeds_after_catalog_race(mock_pool_cls, mock_sleep):
+    """
+    Regression test: a mid-transaction IntegrityError (the pg_type_typname_nsp_index
+    startup race) must not be silently swallowed with only some tables created. The
+    retry must actually re-run _init_db - proven here by counting CREATE TABLE calls
+    on the *second* attempt, not just checking the method returns without raising.
+    """
+    import psycopg2
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = {"id": 1}  # admin user "already exists" - skip insert path
+    mock_cursor.fetchall.return_value = []
+
+    call_count = {"n": 0}
+    calls_before_failure = {"n": None}
+
+    def execute_side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 4 and calls_before_failure["n"] is None:
+            calls_before_failure["n"] = call_count["n"]
+            raise psycopg2.IntegrityError(
+                "duplicate key value violates unique constraint \"pg_type_typname_nsp_index\""
+            )
+        return None
+
+    mock_cursor.execute.side_effect = execute_side_effect
+
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value = mock_cursor
+
+    mock_pool = MagicMock()
+    mock_pool.getconn.return_value = mock_conn
+    mock_pool_cls.return_value = mock_pool
+
+    from job_pulse.storage.postgres_repo import PostgresJobRepository
+    repo = PostgresJobRepository(database_url="postgresql://user:pass@localhost:5432/test")
+
+    # The first attempt aborted after exactly 4 execute() calls (proving the failure
+    # happened mid-sequence, not at the very end). A full _init_db pass makes ~21
+    # execute() calls (10 CREATE TABLE + 10 CREATE INDEX + 1 admin-user SELECT); the
+    # retry must have run the *entire* sequence again for the total to clear 20+,
+    # proving the exception did not just get swallowed as a silent no-op.
+    assert calls_before_failure["n"] == 4
+    assert call_count["n"] > 20
+    # rollback must have fired for the failed first attempt (its DDL was reverted)
+    mock_conn.rollback.assert_called()
+
+
+@patch("job_pulse.storage.postgres_repo.time.sleep")
+@patch("job_pulse.storage.postgres_repo.psycopg2.pool.ThreadedConnectionPool")
+def test_init_db_raises_if_race_persists_after_retry(mock_pool_cls, mock_sleep):
+    """If the same error recurs on the retry, it must propagate - never boot into a
+    half-initialized database silently."""
+    import psycopg2
+    mock_cursor = MagicMock()
+    mock_cursor.execute.side_effect = psycopg2.IntegrityError("persistent catalog error")
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value = mock_cursor
+    mock_pool = MagicMock()
+    mock_pool.getconn.return_value = mock_conn
+    mock_pool_cls.return_value = mock_pool
+
+    from job_pulse.storage.postgres_repo import PostgresJobRepository
+    with pytest.raises(psycopg2.IntegrityError):
+        PostgresJobRepository(database_url="postgresql://user:pass@localhost:5432/test")

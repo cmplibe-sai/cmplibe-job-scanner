@@ -683,9 +683,9 @@ def save_radar_settings(config: EmailConfig, user: str = Depends(get_current_use
     # Preserve existing password if user left password field blank when saving recipients
     if not cfg_dict.get("smtp_password") and curr.get("smtp_password"):
         cfg_dict["smtp_password"] = curr["smtp_password"]
-    # Ensure default sender header uses cmplibe.com if left blank or on test domain
-    if not cfg_dict.get("sender_email") or "onboarding@resend.dev" in cfg_dict.get("sender_email", ""):
-        cfg_dict["sender_email"] = "cMPLiBe AIScanner <alerts@cmplibe.com>"
+    # Ensure default sender header uses earlitalent@cmplibe.com if left blank, test domain, or old default
+    if not cfg_dict.get("sender_email") or any(x in cfg_dict.get("sender_email", "") for x in ["onboarding@resend.dev", "alerts@cmplibe.com"]):
+        cfg_dict["sender_email"] = "cMPLiBe AIScanner <earlitalent@cmplibe.com>"
     db.save_email_config(cfg_dict)
     return {"success": True, "settings": get_radar_settings(user=user)}
 
@@ -715,7 +715,7 @@ def test_radar_email(req: TestEmailRequest, user: str = Depends(get_current_user
         "smtp_port": req.smtp_port or curr.get("smtp_port", 443),
         "smtp_user": (req.smtp_user or "").strip() or curr.get("smtp_user", "resend"),
         "smtp_password": (req.smtp_password or "").strip() or curr.get("smtp_password", ""),
-        "sender_email": (req.sender_email or "").strip() or curr.get("sender_email", "cMPLiBe AIScanner <alerts@cmplibe.com>"),
+        "sender_email": (req.sender_email or "").strip() or curr.get("sender_email", "cMPLiBe AIScanner <earlitalent@cmplibe.com>"),
     }
     success, msg = RadarEmailNotifier.send_test_email(smtp_dict, req.recipient_email)
     if not success:

@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 from job_pulse.storage.db import JobDatabase
 from job_pulse.models import CompanyTarget, RadarAlertLog, JobPost, HiringPost
+from unittest.mock import patch
 from job_pulse.radar.notifier import RadarEmailNotifier
 from job_pulse.radar.scanner import CompanyRadarScanner
 
@@ -363,6 +364,59 @@ def test_scheduled_discovery_scan_stays_silent_with_zero_new_deltas(temp_db):
     # On-demand scan: allowed to fall back to re-sending the top opportunities.
     on_demand_res = scanner.scan_all_india(send_email=True, sync_sheets=False, is_on_demand=True)
     assert on_demand_res["new_jobs_emailed"] == 1
+
+
+def test_recipient_dual_email_defaults_and_legacy_migration(temp_db):
+    """
+    Verify that:
+    1. Default recipient emails point to both cmplibesai@gmail.com and cmplibecynthiya@gmail.com.
+    2. Default sender is earlitalent@cmplibe.com.
+    3. Legacy single recipient 'earlitalent@cmplibe.com' in database automatically upgrades to dual recipients.
+    4. Multi-recipient string is correctly parsed into a list of recipients by notifier.
+    """
+    from job_pulse.config import (
+        DEFAULT_SENDER_EMAIL,
+        DEFAULT_RECIPIENT_EMAIL,
+        DEFAULT_ALL_INDIA_RECIPIENT_EMAIL,
+    )
+    from job_pulse.radar.notifier import RadarEmailNotifier
+
+    assert "cmplibesai@gmail.com" in DEFAULT_RECIPIENT_EMAIL
+    assert "cmplibecynthiya@gmail.com" in DEFAULT_RECIPIENT_EMAIL
+    assert "cmplibesai@gmail.com" in DEFAULT_ALL_INDIA_RECIPIENT_EMAIL
+    assert "cmplibecynthiya@gmail.com" in DEFAULT_ALL_INDIA_RECIPIENT_EMAIL
+    assert "earlitalent@cmplibe.com" in DEFAULT_SENDER_EMAIL
+
+    # Simulate a database that had the old legacy single recipient saved
+    temp_db.save_email_config({
+        "recipient_email": "earlitalent@cmplibe.com",
+        "all_india_recipient": "earlytalent@supabase.com",
+        "sender_email": "cMPLiBe AIScanner <alerts@cmplibe.com>",
+    })
+
+    cfg = temp_db.get_email_config()
+    assert "cmplibesai@gmail.com" in cfg["recipient_email"]
+    assert "cmplibecynthiya@gmail.com" in cfg["recipient_email"]
+    assert "cmplibesai@gmail.com" in cfg["all_india_recipient"]
+    assert "cmplibecynthiya@gmail.com" in cfg["all_india_recipient"]
+    assert "earlitalent@cmplibe.com" in cfg["sender_email"]
+
+    # Test recipient parsing with Resend mock
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        config = {"smtp_host": "resend", "smtp_password": "re_dummy_test_key_123"}
+        ok, msg = RadarEmailNotifier.dispatch_email(
+            config=config,
+            sender="earlitalent@cmplibe.com",
+            recipient="cmplibesai@gmail.com, cmplibecynthiya@gmail.com",
+            subject="Test Alert",
+            html_body="<p>Test</p>",
+        )
+        assert ok is True
+        call_args = mock_post.call_args[1]["json"]
+        assert call_args["to"] == ["cmplibesai@gmail.com", "cmplibecynthiya@gmail.com"]
+        assert "earlitalent@cmplibe.com" in call_args["from"]
+
 
 
 

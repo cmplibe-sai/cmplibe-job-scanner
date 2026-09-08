@@ -14,11 +14,11 @@ services:
       - key: SMTP_USER
         value: resend
       - key: SENDER_EMAIL
-        value: cMPLiBe AIScanner <alerts@cmplibe.com>
+        value: cMPLiBe AIScanner <earlitalent@cmplibe.com>
       - key: RECIPIENT_EMAIL
-        value: earlitalent@cmplibe.com
+        value: cmplibesai@gmail.com, cmplibecynthiya@gmail.com
       - key: ALL_INDIA_RECIPIENT_EMAIL
-        value: earlitalent@cmplibe.com
+        value: cmplibesai@gmail.com, cmplibecynthiya@gmail.com
       - key: RADAR_IS_ENABLED
         value: "true"
       - key: ALL_INDIA_RADAR_IS_ENABLED

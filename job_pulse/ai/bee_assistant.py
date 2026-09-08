@@ -86,8 +86,8 @@ class BeeAssistant:
                 "1. Go to **Email & System Settings ⚙️** (Admin only).",
                 "2. Click the **⚡ Resend HTTPS API (Recommended for Cloud — Port 443)** preset button.",
                 "3. Enter your Resend API Key in the Password field.",
-                "4. Set the **Sender Email Header** to `cMPLiBe AIScanner <alerts@cmplibe.com>`.",
-                "5. Enter the **Target Radar Recipient Email** (e.g. `earlitalent@cmplibe.com`) and **All-India Recipient Email**.",
+                "4. Set the **Sender Email Header** to `cMPLiBe AIScanner <earlitalent@cmplibe.com>`.",
+                "5. Enter the **Target Radar Recipient Email** (e.g. `cmplibesai@gmail.com, cmplibecynthiya@gmail.com`) and **All-India Recipient Email**.",
                 "6. Click **Step 1: Test Mail Server Connection** to verify.",
                 "7. Click **Step 2: Test Send Target Radar Email** to test delivery.",
                 "8. Click **Step 3: Save System & Email Settings** to activate 24/7 automated alerts!"

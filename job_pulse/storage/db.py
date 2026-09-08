@@ -914,7 +914,15 @@ class JobDatabase:
                     elif k in ["is_enabled", "all_india_is_enabled"]:
                         defaults[k] = v.lower() in ["true", "1", "yes"]
                     else:
-                        defaults[k] = v
+                        # Automatically upgrade legacy or unwanted recipient/sender values
+                        legacy_recipients = {"earlitalent@cmplibe.com", "earlytalent@supabase.com", "earlytalent@cmplibe.com"}
+                        legacy_senders = {"cMPLiBe AIScanner <alerts@cmplibe.com>".lower(), "alerts@cmplibe.com", "onboarding@resend.dev"}
+                        if k in ("recipient_email", "all_india_recipient") and v.strip().lower() in legacy_recipients:
+                            defaults[k] = DEFAULT_RECIPIENT_EMAIL if k == "recipient_email" else (DEFAULT_ALL_INDIA_RECIPIENT_EMAIL or DEFAULT_RECIPIENT_EMAIL)
+                        elif k == "sender_email" and v.strip().lower() in legacy_senders:
+                            defaults[k] = DEFAULT_SENDER_EMAIL
+                        else:
+                            defaults[k] = v
         return defaults
 
     def save_email_config(self, config_dict: Dict[str, Any]) -> bool:

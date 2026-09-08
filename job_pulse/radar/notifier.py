@@ -194,8 +194,8 @@ class RadarEmailNotifier:
 
             import requests
             from_header = (sender or "").strip()
-            if not from_header or "@" not in from_header or "onboarding@resend.dev" in from_header:
-                from_header = "cMPLiBe AIScanner <alerts@cmplibe.com>"
+            if not from_header or "@" not in from_header or any(x in from_header for x in ["onboarding@resend.dev", "alerts@cmplibe.com"]):
+                from_header = "cMPLiBe AIScanner <earlitalent@cmplibe.com>"
             elif "<" not in from_header and "@" in from_header:
                 from_header = f"cMPLiBe AIScanner <{from_header}>"
 

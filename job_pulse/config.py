@@ -67,9 +67,9 @@ DEFAULT_SMTP_HOST = os.getenv("SMTP_HOST", "resend")
 DEFAULT_SMTP_PORT = int(os.getenv("SMTP_PORT", "443"))
 DEFAULT_SMTP_USER = os.getenv("SMTP_USER", "resend")
 DEFAULT_SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", os.getenv("RESEND_API_KEY", ""))
-DEFAULT_SENDER_EMAIL = os.getenv("SENDER_EMAIL", "cMPLiBe AIScanner <alerts@cmplibe.com>")
-DEFAULT_RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "earlitalent@cmplibe.com")  # Target Company Radar recipient
-DEFAULT_ALL_INDIA_RECIPIENT_EMAIL = os.getenv("ALL_INDIA_RECIPIENT_EMAIL", "earlitalent@cmplibe.com")  # All-India Opportunity Alert recipient
+DEFAULT_SENDER_EMAIL = os.getenv("SENDER_EMAIL", "cMPLiBe AIScanner <earlitalent@cmplibe.com>")
+DEFAULT_RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "cmplibesai@gmail.com, cmplibecynthiya@gmail.com")  # Target Company Radar recipient
+DEFAULT_ALL_INDIA_RECIPIENT_EMAIL = os.getenv("ALL_INDIA_RECIPIENT_EMAIL", "cmplibesai@gmail.com, cmplibecynthiya@gmail.com")  # All-India Opportunity Alert recipient
 DEFAULT_RADAR_INTERVAL_MINUTES = int(os.getenv("RADAR_INTERVAL_MINUTES", "60"))
 DEFAULT_ALL_INDIA_RADAR_INTERVAL_MINUTES = int(os.getenv("ALL_INDIA_RADAR_INTERVAL_MINUTES", "120"))
 

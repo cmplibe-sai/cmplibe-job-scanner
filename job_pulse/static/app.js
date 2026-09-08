@@ -2142,7 +2142,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (hostEl) hostEl.value = config.smtp_host || "resend";
       if (portEl) portEl.value = config.smtp_port || 443;
       if (userEl) userEl.value = config.smtp_user || "resend";
-      if (senderEl) senderEl.value = config.sender_email || "cMPLiBe AIScanner <alerts@cmplibe.com>";
+      if (senderEl) senderEl.value = config.sender_email || "cMPLiBe AIScanner <earlitalent@cmplibe.com>";
 
       const passEl = document.getElementById("smtp-pass");
       if (passEl && config.smtp_password_set) {
@@ -2175,7 +2175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!passEl.value || !passEl.value.startsWith("re_")) {
         passEl.value = "";
       }
-      document.getElementById("sender-email").value = "cMPLiBe AIScanner <alerts@cmplibe.com>";
+      document.getElementById("sender-email").value = "cMPLiBe AIScanner <earlitalent@cmplibe.com>";
       showToast("Applied Resend Cloud HTTPS API Preset (Port 443 - Cloud Firewall Proof)", "success");
     } else if (provider === "gmail_ssl") {
       document.getElementById("smtp-host").value = "smtp.gmail.com";

@@ -17,6 +17,9 @@ pip install -r requirements.txt --quiet
 echo "🔄 [3/3] Restarting 24/7 background scanner service..."
 systemctl restart cmplibe-jobs
 
+echo "🔑 Synchronizing admin access credentials..."
+python reset_admin.py
+
 echo "=========================================================="
 echo "✅ cMPLiBe AIScanner updated successfully!"
 echo "• Status: $(systemctl is-active cmplibe-jobs)"

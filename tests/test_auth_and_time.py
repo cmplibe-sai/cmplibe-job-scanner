@@ -70,11 +70,13 @@ def test_database_user_authentication(tmp_path):
     db_file = tmp_path / "test_auth.db"
     db = JobDatabase(db_path=db_file)
 
-    # Verify default admin exists
+    # Verify default admin exists and supports case-insensitive login
     admin_info = db.verify_user_credentials("admin", "cmplibe@2026")
     assert admin_info is not None
     assert admin_info["username"] == "admin"
     assert admin_info["role"] == "admin"
+    assert db.verify_user_credentials("Admin", "cmplibe@2026") is not None
+    assert db.verify_user_credentials("ADMIN", "cmplibe@2026") is not None
     assert db.verify_user_credentials("admin", "incorrect_pwd") is None
     assert db.verify_user_credentials("unknown_user", "cmplibe@2026") is None
 
@@ -139,4 +141,23 @@ def test_admin_user_management(tmp_path):
     ok_del, _ = db.admin_delete_user("recruiter_rahul", requesting_username="admin")
     assert ok_del is True
     assert db.verify_user_credentials("recruiter_rahul", "brand_new_pass_123") is None
+
+
+def test_admin_synchronization_from_env(tmp_path, monkeypatch):
+    """Test that setting ADMIN_PASSWORD synchronizes admin credentials on database restart."""
+    from job_pulse.storage.db import JobDatabase
+
+    db_file = tmp_path / "test_sync.db"
+
+    # 1. First initialize with default
+    db1 = JobDatabase(db_path=db_file)
+    assert db1.verify_user_credentials("admin", "cmplibe@2026") is not None
+
+    # 2. Re-open with new ADMIN_PASSWORD configured in environment
+    monkeypatch.setenv("ADMIN_PASSWORD", "BrandNewPass@999")
+    db2 = JobDatabase(db_path=db_file)
+    assert db2.verify_user_credentials("admin", "BrandNewPass@999") is not None
+    assert db2.verify_user_credentials("Admin", "BrandNewPass@999") is not None
+    assert db2.verify_user_credentials("admin", "cmplibe@2026") is None
+
 

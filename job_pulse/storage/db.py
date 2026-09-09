@@ -259,25 +259,42 @@ class JobDatabase:
             cursor.execute("UPDATE users SET role = 'admin' WHERE username = 'admin'")
 
             # Initialize default admin user if none exists
-            cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-            if not cursor.fetchone():
-                import os
-                import secrets
-                from job_pulse.security import hash_password
-                default_pwd = os.environ.get("ADMIN_PASSWORD")
-                if not default_pwd:
-                    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"):
-                        default_pwd = "cmplibe@2026"
-                    else:
-                        default_pwd = secrets.token_urlsafe(16)
-                        logger.warning(f"ADMIN_PASSWORD not set in environment. Generated one-time admin password: {default_pwd}")
-                else:
-                    logger.info("Initializing default admin user with configured ADMIN_PASSWORD.")
-                p_hash, salt = hash_password(default_pwd)
+            cursor.execute("SELECT id, password_hash, salt, role, is_active, last_login_at FROM users WHERE LOWER(username) = 'admin'")
+            admin_row = cursor.fetchone()
+
+            import os
+            from job_pulse.security import hash_password, verify_password
+            configured_pwd = (os.environ.get("ADMIN_PASSWORD") or "").strip()
+            admin_pwd = configured_pwd if configured_pwd else "cmplibe@2026"
+            force_reset = os.environ.get("RESET_ADMIN_PASSWORD", "").lower() in ("true", "1", "yes")
+
+            if not admin_row:
+                p_hash, salt = hash_password(admin_pwd)
                 cursor.execute(
                     "INSERT INTO users (username, password_hash, salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     ("admin", p_hash, salt, "admin", 1, get_ist_iso()),
                 )
+                logger.info("Initialized default admin user with initial credentials.")
+            else:
+                curr_hash = admin_row["password_hash"] if "password_hash" in admin_row.keys() else None
+                curr_salt = admin_row["salt"] if "salt" in admin_row.keys() else None
+                is_valid_default = verify_password("cmplibe@2026", curr_hash, curr_salt) if (curr_hash and curr_salt) else False
+                is_valid_configured = verify_password(configured_pwd, curr_hash, curr_salt) if (configured_pwd and curr_hash and curr_salt) else False
+
+                last_login = admin_row["last_login_at"] if "last_login_at" in admin_row.keys() else None
+                needs_pwd_sync = force_reset or (bool(configured_pwd) and not is_valid_configured) or (curr_hash is not None and not is_valid_default and not is_valid_configured and not last_login)
+
+                if needs_pwd_sync:
+                    p_hash, salt = hash_password(admin_pwd)
+                    cursor.execute(
+                        "UPDATE users SET password_hash = ?, salt = ?, role = 'admin', is_active = 1 WHERE LOWER(username) = 'admin'",
+                        (p_hash, salt),
+                    )
+                    logger.info("Synchronized admin credentials in database (role='admin', is_active=1).")
+                else:
+                    cursor.execute(
+                        "UPDATE users SET role = 'admin', is_active = 1 WHERE LOWER(username) = 'admin' AND (is_active != 1 OR role != 'admin')"
+                    )
 
             # Initialize default watchlist targets if requested and table is empty
             if init_default_targets:
@@ -949,7 +966,7 @@ class JobDatabase:
         from job_pulse.security import verify_password
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, username, password_hash, salt, role, is_active FROM users WHERE username = ?", (username.strip(),))
+            cursor.execute("SELECT id, username, password_hash, salt, role, is_active FROM users WHERE LOWER(username) = LOWER(?)", (username.strip(),))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -968,7 +985,7 @@ class JobDatabase:
         """Fetch role ('admin' or 'member') for a given username."""
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT role FROM users WHERE username = ?", (username.strip(),))
+            cursor.execute("SELECT role FROM users WHERE LOWER(username) = LOWER(?)", (username.strip(),))
             row = cursor.fetchone()
             return row["role"] if row else None
 
@@ -984,7 +1001,7 @@ class JobDatabase:
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (uname,))
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (uname,))
             if cursor.fetchone():
                 return False, f"Username '{uname}' is already taken."
 
@@ -1003,7 +1020,7 @@ class JobDatabase:
             return False, "New password must be at least 6 characters long."
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT password_hash, salt FROM users WHERE username = ?", (username.strip(),))
+            cursor.execute("SELECT password_hash, salt FROM users WHERE LOWER(username) = LOWER(?)", (username.strip(),))
             row = cursor.fetchone()
             if not row:
                 return False, "User not found."
@@ -1012,8 +1029,8 @@ class JobDatabase:
 
             p_hash, salt = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?",
-                (p_hash, salt, username.strip())
+                "UPDATE users SET password_hash = ?, salt = ?, last_login_at = COALESCE(last_login_at, ?) WHERE LOWER(username) = LOWER(?)",
+                (p_hash, salt, get_ist_iso(), username.strip())
             )
             conn.commit()
             return True, "Password updated successfully."
@@ -1025,49 +1042,49 @@ class JobDatabase:
             return False, "New password must be at least 6 characters long."
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (target_username.strip(),))
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (target_username.strip(),))
             if not cursor.fetchone():
                 return False, f"User '{target_username}' not found."
 
             p_hash, salt = hash_password(new_password)
             cursor.execute(
-                "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?",
-                (p_hash, salt, target_username.strip())
+                "UPDATE users SET password_hash = ?, salt = ?, last_login_at = COALESCE(last_login_at, ?) WHERE LOWER(username) = LOWER(?)",
+                (p_hash, salt, get_ist_iso(), target_username.strip())
             )
             conn.commit()
             return True, f"Password for '{target_username}' has been reset successfully."
 
     def admin_toggle_user_status(self, target_username: str, requesting_username: str) -> Tuple[bool, str]:
         """Toggle active/inactive status for a user."""
-        if target_username.strip() == requesting_username.strip():
+        if target_username.strip().lower() == requesting_username.strip().lower():
             return False, "You cannot deactivate your own logged-in account."
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT is_active FROM users WHERE username = ?", (target_username.strip(),))
+            cursor.execute("SELECT is_active FROM users WHERE LOWER(username) = LOWER(?)", (target_username.strip(),))
             row = cursor.fetchone()
             if not row:
                 return False, f"User '{target_username}' not found."
 
             new_status = 0 if row["is_active"] == 1 else 1
-            cursor.execute("UPDATE users SET is_active = ? WHERE username = ?", (new_status, target_username.strip()))
+            cursor.execute("UPDATE users SET is_active = ? WHERE LOWER(username) = LOWER(?)", (new_status, target_username.strip()))
             conn.commit()
             status_text = "activated" if new_status == 1 else "deactivated"
             return True, f"User '{target_username}' has been {status_text}."
 
     def admin_delete_user(self, target_username: str, requesting_username: str) -> Tuple[bool, str]:
         """Delete a team user from the database."""
-        if target_username.strip() == requesting_username.strip():
+        if target_username.strip().lower() == requesting_username.strip().lower():
             return False, "You cannot delete your own account."
         if target_username.strip().lower() == "admin":
             return False, "The default 'admin' account cannot be deleted."
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM users WHERE username = ?", (target_username.strip(),))
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (target_username.strip(),))
             if not cursor.fetchone():
                 return False, f"User '{target_username}' not found."
 
-            cursor.execute("DELETE FROM users WHERE username = ?", (target_username.strip(),))
+            cursor.execute("DELETE FROM users WHERE LOWER(username) = LOWER(?)", (target_username.strip(),))
             conn.commit()
             return True, f"User '{target_username}' deleted successfully."
 
@@ -1076,7 +1093,7 @@ class JobDatabase:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE users SET last_login_at = ? WHERE username = ?",
+                "UPDATE users SET last_login_at = ? WHERE LOWER(username) = LOWER(?)",
                 (get_ist_iso(), username.strip())
             )
             conn.commit()

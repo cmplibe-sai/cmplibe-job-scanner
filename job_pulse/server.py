@@ -160,7 +160,7 @@ def login(req: LoginRequest, request: Request, response: Response):
             detail="Too many failed login attempts. Account temporarily locked for 15 minutes for security."
         )
 
-    user_info = db.verify_user_credentials(req.username, req.password)
+    user_info = db.verify_user_credentials(req.username.strip(), req.password)
     if not user_info:
         _LOGIN_FAILURES.setdefault(rate_key, []).append(now)
         raise HTTPException(status_code=401, detail="Invalid username or password, or account is disabled.")
